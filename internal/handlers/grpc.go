@@ -23,7 +23,9 @@ func NewGRPCHandler(monitor *services.GRPCMonitor, logger *logrus.Logger) *GRPCH
 }
 
 func (h *GRPCHandler) GetGRPCServers(c *gin.Context) {
-	servers, err := h.monitor.GetGRPCServersWithStatus()
+	ctx := c.Request.Context()
+
+	servers, err := h.monitor.GetGRPCServersWithStatus(ctx)
 	if err != nil {
 		h.logger.WithError(err).Error("Failed to get gRPC servers")
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -36,7 +38,9 @@ func (h *GRPCHandler) GetGRPCServers(c *gin.Context) {
 }
 
 func (h *GRPCHandler) SyncGRPCServersFromFile(c *gin.Context) {
-	err := h.monitor.SyncGRPCServersFromFile()
+	ctx := c.Request.Context()
+
+	err := h.monitor.SyncGRPCServersFromFile(ctx)
 	if err != nil {
 		h.logger.WithError(err).Error("Failed to sync gRPC servers")
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -46,7 +50,7 @@ func (h *GRPCHandler) SyncGRPCServersFromFile(c *gin.Context) {
 		return
 	}
 
-	count, err := h.monitor.GetGRPCServerCount()
+	count, err := h.monitor.GetGRPCServerCount(ctx)
 	if err != nil {
 		h.logger.WithError(err).Error("Failed to get server count")
 	}
@@ -59,7 +63,9 @@ func (h *GRPCHandler) SyncGRPCServersFromFile(c *gin.Context) {
 }
 
 func (h *GRPCHandler) CheckAllServers(c *gin.Context) {
-	err := h.monitor.CheckAllServers(c.Request.Context())
+	ctx := c.Request.Context()
+
+	err := h.monitor.CheckAllServers(ctx)
 	if err != nil {
 		h.logger.WithError(err).Error("Failed to check all servers")
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -75,7 +81,9 @@ func (h *GRPCHandler) CheckAllServers(c *gin.Context) {
 }
 
 func (h *GRPCHandler) GetGRPCServerCount(c *gin.Context) {
-	count, err := h.monitor.GetGRPCServerCount()
+	ctx := c.Request.Context()
+
+	count, err := h.monitor.GetGRPCServerCount(ctx)
 	if err != nil {
 		h.logger.WithError(err).Error("Failed to get server count")
 		c.JSON(http.StatusInternalServerError, gin.H{

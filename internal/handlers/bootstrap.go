@@ -23,7 +23,9 @@ func NewBootstrapHandler(monitor *services.BootstrapMonitor, logger *logrus.Logg
 }
 
 func (h *BootstrapHandler) GetBootstrapNodes(c *gin.Context) {
-	nodes, err := h.monitor.GetBootstrapNodesWithStatus()
+	ctx := c.Request.Context()
+
+	nodes, err := h.monitor.GetBootstrapNodesWithStatus(ctx)
 	if err != nil {
 		h.logger.WithError(err).Error("Failed to get bootstrap nodes")
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -34,8 +36,11 @@ func (h *BootstrapHandler) GetBootstrapNodes(c *gin.Context) {
 
 	c.JSON(http.StatusOK, nodes)
 }
+
 func (h *BootstrapHandler) SyncBootstrapNodesFromFile(c *gin.Context) {
-	err := h.monitor.SyncBootstrapNodesFromFile()
+	ctx := c.Request.Context()
+
+	err := h.monitor.SyncBootstrapNodesFromFile(ctx)
 	if err != nil {
 		h.logger.WithError(err).Error("Failed to sync bootstrap nodes from file")
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -46,7 +51,7 @@ func (h *BootstrapHandler) SyncBootstrapNodesFromFile(c *gin.Context) {
 	}
 
 	// Get updated count
-	count, err := h.monitor.GetBootstrapNodeCount()
+	count, err := h.monitor.GetBootstrapNodeCount(ctx)
 	if err != nil {
 		h.logger.WithError(err).Error("Failed to get bootstrap node count")
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -58,13 +63,15 @@ func (h *BootstrapHandler) SyncBootstrapNodesFromFile(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message":     "Bootstrap nodes synced successfully from file",
 		"total_nodes": count,
-		"source":      "https://github.com/pactus-project/pactus/blob/main/config/bootstrap.json",
+		"source":      "local file",
 		"timestamp":   time.Now().UTC(),
 	})
 }
 
 func (h *BootstrapHandler) GetBootstrapNodeCount(c *gin.Context) {
-	count, err := h.monitor.GetBootstrapNodeCount()
+	ctx := c.Request.Context()
+
+	count, err := h.monitor.GetBootstrapNodeCount(ctx)
 	if err != nil {
 		h.logger.WithError(err).Error("Failed to get bootstrap node count")
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -80,7 +87,9 @@ func (h *BootstrapHandler) GetBootstrapNodeCount(c *gin.Context) {
 }
 
 func (h *BootstrapHandler) CheckAllNodes(c *gin.Context) {
-	err := h.monitor.CheckAllNodes(c.Request.Context())
+	ctx := c.Request.Context()
+
+	err := h.monitor.CheckAllNodes(ctx)
 	if err != nil {
 		h.logger.WithError(err).Error("Failed to check all nodes")
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -88,6 +97,7 @@ func (h *BootstrapHandler) CheckAllNodes(c *gin.Context) {
 		})
 		return
 	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"status":    "all nodes checked",
 		"timestamp": time.Now().UTC(),
