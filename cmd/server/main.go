@@ -16,6 +16,7 @@ import (
 	"github.com/kyvra-tech/pactus-nodes-tracker-backend/internal/config"
 	"github.com/kyvra-tech/pactus-nodes-tracker-backend/internal/database"
 	"github.com/kyvra-tech/pactus-nodes-tracker-backend/internal/handlers"
+	"github.com/kyvra-tech/pactus-nodes-tracker-backend/internal/repositories"
 	"github.com/kyvra-tech/pactus-nodes-tracker-backend/internal/scheduler"
 	"github.com/kyvra-tech/pactus-nodes-tracker-backend/internal/services"
 	"github.com/kyvra-tech/pactus-nodes-tracker-backend/pkg/logger"
@@ -38,19 +39,32 @@ func main() {
 	}
 	defer db.Close()
 
+	// Initialize repositories
+	bootstrapRepo := repositories.NewBootstrapRepository(db.DB)
+	statusRepo := repositories.NewStatusRepository(db.DB)
+	grpcRepo := repositories.NewGRPCRepository(db.DB)
+	grpcStatusRepo := repositories.NewGRPCStatusRepository(db.DB)
 	// Initialize services
-	// 1. Create bootstrap service with local file path
-	bootstrapService := services.NewBootstrapService(
-		appLogger,
-		"./internal/database/bootstrap.json",
-	)
-
 	nodeChecker := services.NewNodeChecker(
 		cfg.Monitor.ConnectionTimeout,
 		cfg.Monitor.MaxRetryAttempts,
 		appLogger,
 	)
-	// Initialize gRPC services
+
+	bootstrapService := services.NewBootstrapService(
+		appLogger,
+		"./internal/database/bootstrap.json",
+	)
+
+	bootstrapMonitor := services.NewBootstrapMonitor(
+		bootstrapRepo,
+		statusRepo,
+		nodeChecker,
+		appLogger,
+		bootstrapService,
+	)
+
+	// Initialize gRPC services (keep existing implementation)
 	grpcServerService := services.NewGRPCServerService(
 		appLogger,
 		"./internal/database/servers.json",
@@ -60,15 +74,14 @@ func main() {
 		cfg.Monitor.MaxRetryAttempts,
 		appLogger,
 	)
-
 	grpcMonitor := services.NewGRPCMonitor(
-		db.DB,
+		grpcRepo,
+		grpcStatusRepo,
 		grpcChecker,
 		appLogger,
 		grpcServerService,
 	)
-	// 2. Create bootstrap monitor with db, logger, and bootstrap service
-	bootstrapMonitor := services.NewBootstrapMonitor(db.DB, nodeChecker, appLogger, bootstrapService)
+
 	// Initialize scheduler
 	cronScheduler := scheduler.NewCronScheduler(bootstrapMonitor, grpcMonitor, appLogger)
 	cronScheduler.Start()
@@ -76,7 +89,6 @@ func main() {
 
 	// Initialize HTTP handlers
 	bootstrapHandler := handlers.NewBootstrapHandler(bootstrapMonitor, appLogger)
-
 	grpcHandler := handlers.NewGRPCHandler(grpcMonitor, appLogger)
 
 	// Setup Gin router
@@ -106,10 +118,13 @@ func main() {
 		api.GET("/bootstrap", bootstrapHandler.GetBootstrapNodes)
 		api.POST("/bootstrap/sync", bootstrapHandler.SyncBootstrapNodesFromFile)
 		api.GET("/bootstrap/check", bootstrapHandler.CheckAllNodes)
+		api.GET("/bootstrap/count", bootstrapHandler.GetBootstrapNodeCount)
+
 		api.GET("/grpc", grpcHandler.GetGRPCServers)
 		api.POST("/grpc/sync", grpcHandler.SyncGRPCServersFromFile)
 		api.GET("/grpc/check", grpcHandler.CheckAllServers)
 		api.GET("/grpc/count", grpcHandler.GetGRPCServerCount)
+
 		api.GET("/health", func(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{
 				"status":    "healthy",

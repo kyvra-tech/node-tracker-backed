@@ -2,34 +2,42 @@ package services
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
-	"time" //
+	"time"
 
-	"github.com/lib/pq"
 	"github.com/sirupsen/logrus"
 
 	"github.com/kyvra-tech/pactus-nodes-tracker-backend/internal/models"
+	"github.com/kyvra-tech/pactus-nodes-tracker-backend/internal/repositories"
 )
 
 type BootstrapMonitor struct {
-	db               *sql.DB
-	logger           *logrus.Logger
+	bootstrapRepo    repositories.BootstrapRepository
+	statusRepo       repositories.StatusRepository
 	nodeChecker      *NodeChecker
-	bootstrapService *BootstrapService // Make sure this field exists
+	bootstrapService *BootstrapService
+	logger           *logrus.Logger
 }
 
-func NewBootstrapMonitor(db *sql.DB, nodeChecker *NodeChecker, logger *logrus.Logger, bootstrapService *BootstrapService) *BootstrapMonitor {
+func NewBootstrapMonitor(
+	bootstrapRepo repositories.BootstrapRepository,
+	statusRepo repositories.StatusRepository,
+	nodeChecker *NodeChecker,
+	logger *logrus.Logger,
+	bootstrapService *BootstrapService,
+) *BootstrapMonitor {
 	return &BootstrapMonitor{
-		db:               db,
-		logger:           logger,
+		bootstrapRepo:    bootstrapRepo,
+		statusRepo:       statusRepo,
 		nodeChecker:      nodeChecker,
 		bootstrapService: bootstrapService,
+		logger:           logger,
 	}
 }
 
+// CheckAllNodes performs health checks on all active nodes
 func (bm *BootstrapMonitor) CheckAllNodes(ctx context.Context) error {
-	nodes, err := bm.getActiveNodes()
+	nodes, err := bm.bootstrapRepo.GetActiveNodes(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get active nodes: %w", err)
 	}
@@ -44,16 +52,17 @@ func (bm *BootstrapMonitor) CheckAllNodes(ctx context.Context) error {
 	}
 
 	// Update overall scores after checking all nodes
-	if err := bm.updateOverallScores(); err != nil {
+	if err := bm.bootstrapRepo.UpdateAllScores(ctx); err != nil {
 		bm.logger.WithError(err).Error("Failed to update overall scores")
 	}
 
 	return nil
 }
 
+// checkSingleNode checks a single node's health
 func (bm *BootstrapMonitor) checkSingleNode(ctx context.Context, node *models.BootstrapNode, date time.Time) error {
 	// Check if we already have a record for today
-	exists, err := bm.hasStatusForDate(node.ID, date)
+	exists, err := bm.statusRepo.HasStatusForDate(ctx, node.ID, date)
 	if err != nil {
 		return err
 	}
@@ -85,91 +94,12 @@ func (bm *BootstrapMonitor) checkSingleNode(ctx context.Context, node *models.Bo
 		ErrorMsg: result.ErrorMsg,
 	}
 
-	return bm.saveDailyStatus(status)
+	return bm.statusRepo.CreateStatus(ctx, status)
 }
 
-func (bm *BootstrapMonitor) getActiveNodes() ([]*models.BootstrapNode, error) {
-	query := `
-        SELECT id, name, email, website, address, overall_score, is_active, created_at, updated_at
-        FROM bootstrap_nodes 
-        WHERE is_active = true
-        ORDER BY id
-    `
-
-	rows, err := bm.db.Query(query)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var nodes []*models.BootstrapNode
-	for rows.Next() {
-		node := &models.BootstrapNode{}
-		err := rows.Scan(
-			&node.ID, &node.Name, &node.Email, &node.Website, &node.Address,
-			&node.OverallScore, &node.IsActive, &node.CreatedAt, &node.UpdatedAt,
-		)
-		if err != nil {
-			return nil, err
-		}
-		nodes = append(nodes, node)
-	}
-
-	return nodes, rows.Err()
-}
-
-func (bm *BootstrapMonitor) hasStatusForDate(nodeID int, date time.Time) (bool, error) {
-	query := `SELECT EXISTS(SELECT 1 FROM daily_status WHERE node_id = $1 AND date = $2)`
-
-	var exists bool
-	err := bm.db.QueryRow(query, nodeID, date).Scan(&exists)
-	return exists, err
-}
-
-func (bm *BootstrapMonitor) saveDailyStatus(status *models.DailyStatus) error {
-	query := `
-        INSERT INTO daily_status (node_id, date, color, attempts, success, error_msg)
-        VALUES ($1, $2, $3, $4, $5, $6)
-        ON CONFLICT (node_id, date) 
-        DO UPDATE SET 
-            color = EXCLUDED.color,
-            attempts = EXCLUDED.attempts,
-            success = EXCLUDED.success,
-            error_msg = EXCLUDED.error_msg,
-            created_at = NOW()
-    `
-
-	_, err := bm.db.Exec(query,
-		status.NodeID, status.Date, status.Color,
-		status.Attempts, status.Success, status.ErrorMsg,
-	)
-
-	return err
-}
-
-func (bm *BootstrapMonitor) updateOverallScores() error {
-	query := `
-        UPDATE bootstrap_nodes 
-        SET overall_score = (
-            SELECT COALESCE(
-                ROUND(
-                    (COUNT(CASE WHEN success = true THEN 1 END) * 100.0 / COUNT(*))::numeric, 2
-                ), 0
-            )
-            FROM daily_status 
-            WHERE node_id = bootstrap_nodes.id 
-            AND date >= CURRENT_DATE - INTERVAL '30 days'
-        ),
-        updated_at = NOW()
-        WHERE is_active = true
-    `
-
-	_, err := bm.db.Exec(query)
-	return err
-}
-
-func (bm *BootstrapMonitor) GetBootstrapNodesWithStatus() ([]*models.BootstrapNodeResponse, error) {
-	nodes, err := bm.getActiveNodes()
+// GetBootstrapNodesWithStatus retrieves all active nodes with their recent status history
+func (bm *BootstrapMonitor) GetBootstrapNodesWithStatus(ctx context.Context) ([]*models.BootstrapNodeResponse, error) {
+	nodes, err := bm.bootstrapRepo.GetActiveNodes(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +107,7 @@ func (bm *BootstrapMonitor) GetBootstrapNodesWithStatus() ([]*models.BootstrapNo
 	var response []*models.BootstrapNodeResponse
 
 	for _, node := range nodes {
-		statuses, err := bm.getRecentStatuses(node.ID, 30) // Last 30 days
+		statuses, err := bm.statusRepo.GetRecentStatusesByNode(ctx, node.ID, 30) // Last 30 days
 		if err != nil {
 			bm.logger.WithError(err).WithField("node_id", node.ID).Error("Failed to get statuses")
 			continue
@@ -198,49 +128,18 @@ func (bm *BootstrapMonitor) GetBootstrapNodesWithStatus() ([]*models.BootstrapNo
 	return response, nil
 }
 
-func (bm *BootstrapMonitor) getRecentStatuses(nodeID int, days int) ([]models.StatusItem, error) {
-	query := `
-        SELECT color, date
-        FROM daily_status
-        WHERE node_id = $1 AND date >= CURRENT_DATE - INTERVAL '%d days'
-        ORDER BY date DESC
-    `
-
-	rows, err := bm.db.Query(fmt.Sprintf(query, days), nodeID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var statuses []models.StatusItem
-	for rows.Next() {
-		var color int
-		var date time.Time
-
-		if err := rows.Scan(&color, &date); err != nil {
-			return nil, err
-		}
-
-		status := models.StatusItem{
-			Color: color,
-			Date:  date.Format("2006-01-02"),
-		}
-		statuses = append(statuses, status)
-	}
-
-	return statuses, rows.Err()
-}
-func (bm *BootstrapMonitor) SyncBootstrapNodesFromFile() error {
+// SyncBootstrapNodesFromFile synchronizes nodes from the local JSON file
+func (bm *BootstrapMonitor) SyncBootstrapNodesFromFile(ctx context.Context) error {
 	bm.logger.Info("Starting bootstrap node sync from local file")
 
-	// Load bootstrap nodes from local file using the simplified service
+	// Load bootstrap nodes from local file
 	githubNodes, err := bm.bootstrapService.LoadBootstrapNodes()
 	if err != nil {
 		return fmt.Errorf("failed to load bootstrap nodes: %w", err)
 	}
 
 	// Get current nodes from database
-	currentNodes, err := bm.getAllNodes()
+	currentNodes, err := bm.bootstrapRepo.GetAllNodes(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get current nodes: %w", err)
 	}
@@ -264,7 +163,13 @@ func (bm *BootstrapMonitor) SyncBootstrapNodesFromFile() error {
 		if existingNode, exists := currentNodesMap[githubNode.Address]; exists {
 			// Update existing node if needed
 			if bm.shouldUpdateNode(existingNode, githubNode) {
-				if err := bm.updateNodeFromGitHub(existingNode, githubNode); err != nil {
+				updatedNode := &models.BootstrapNode{
+					Name:    githubNode.Name,
+					Email:   githubNode.Email,
+					Website: githubNode.Website,
+					Address: githubNode.Address,
+				}
+				if err := bm.bootstrapRepo.UpdateNode(ctx, updatedNode); err != nil {
 					bm.logger.WithError(err).WithField("address", githubNode.Address).Error("Failed to update node")
 					stats.Errors++
 					continue
@@ -273,7 +178,14 @@ func (bm *BootstrapMonitor) SyncBootstrapNodesFromFile() error {
 			}
 		} else {
 			// Add new node
-			if err := bm.addNodeFromGitHub(githubNode); err != nil {
+			newNode := &models.BootstrapNode{
+				Name:     githubNode.Name,
+				Email:    githubNode.Email,
+				Website:  githubNode.Website,
+				Address:  githubNode.Address,
+				IsActive: true,
+			}
+			if err := bm.bootstrapRepo.CreateNode(ctx, newNode); err != nil {
 				bm.logger.WithError(err).WithField("address", githubNode.Address).Error("Failed to add node")
 				stats.Errors++
 				continue
@@ -283,7 +195,20 @@ func (bm *BootstrapMonitor) SyncBootstrapNodesFromFile() error {
 	}
 
 	// Deactivate nodes that are no longer in the file
-	stats.Deactivated = bm.deactivateRemovedNodes(githubNodesMap, currentNodes)
+	var nodesToDeactivate []string
+	for _, node := range currentNodes {
+		if _, exists := githubNodesMap[node.Address]; !exists && node.IsActive {
+			nodesToDeactivate = append(nodesToDeactivate, node.Address)
+		}
+	}
+
+	if len(nodesToDeactivate) > 0 {
+		if err := bm.bootstrapRepo.DeactivateNodes(ctx, nodesToDeactivate); err != nil {
+			bm.logger.WithError(err).Error("Failed to deactivate removed nodes")
+		} else {
+			stats.Deactivated = len(nodesToDeactivate)
+		}
+	}
 
 	bm.logger.WithFields(logrus.Fields{
 		"added":       stats.Added,
@@ -295,6 +220,13 @@ func (bm *BootstrapMonitor) SyncBootstrapNodesFromFile() error {
 	return nil
 }
 
+// GetBootstrapNodeCount returns the count of active bootstrap nodes
+func (bm *BootstrapMonitor) GetBootstrapNodeCount(ctx context.Context) (int, error) {
+	return bm.bootstrapRepo.GetNodeCount(ctx, true)
+}
+
+// Helper types and functions
+
 type SyncStats struct {
 	Added       int
 	Updated     int
@@ -302,92 +234,8 @@ type SyncStats struct {
 	Errors      int
 }
 
-func (bm *BootstrapMonitor) addNodeFromGitHub(githubNode *BootstrapNode) error {
-	query := `
-        INSERT INTO bootstrap_nodes (name, email, website, address, is_active, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, true, NOW(), NOW())
-        ON CONFLICT (address) DO NOTHING
-    `
-
-	_, err := bm.db.Exec(query, githubNode.Name, githubNode.Email, githubNode.Website, githubNode.Address)
-	return err
-}
-
-func (bm *BootstrapMonitor) updateNodeFromGitHub(existingNode *models.BootstrapNode, githubNode *BootstrapNode) error {
-	query := `
-        UPDATE bootstrap_nodes 
-        SET name = $1, email = $2, website = $3, updated_at = NOW()
-        WHERE address = $4
-    `
-
-	_, err := bm.db.Exec(query, githubNode.Name, githubNode.Email, githubNode.Website, githubNode.Address)
-	return err
-}
-
 func (bm *BootstrapMonitor) shouldUpdateNode(existing *models.BootstrapNode, github *BootstrapNode) bool {
 	return existing.Name != github.Name ||
 		existing.Email != github.Email ||
 		existing.Website != github.Website
-}
-
-func (bm *BootstrapMonitor) deactivateRemovedNodes(githubNodes map[string]*BootstrapNode, currentNodes []*models.BootstrapNode) int {
-	var nodesToDeactivate []string
-	for _, node := range currentNodes {
-		if _, exists := githubNodes[node.Address]; !exists && node.IsActive {
-			nodesToDeactivate = append(nodesToDeactivate, node.Address)
-		}
-	}
-
-	if len(nodesToDeactivate) > 0 {
-		query := `UPDATE bootstrap_nodes SET is_active = false, updated_at = NOW() WHERE address = ANY($1)`
-		_, err := bm.db.Exec(query, pq.Array(nodesToDeactivate))
-		if err != nil {
-			bm.logger.WithError(err).Error("Failed to deactivate removed nodes")
-			return 0
-		}
-	}
-
-	return len(nodesToDeactivate)
-}
-
-func (bm *BootstrapMonitor) getAllNodes() ([]*models.BootstrapNode, error) {
-	query := `
-        SELECT id, name, email, website, address, overall_score, is_active, created_at, updated_at
-        FROM bootstrap_nodes 
-        ORDER BY id
-    `
-
-	rows, err := bm.db.Query(query)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var nodes []*models.BootstrapNode
-	for rows.Next() {
-		node := &models.BootstrapNode{}
-		err := rows.Scan(
-			&node.ID, &node.Name, &node.Email, &node.Website, &node.Address,
-			&node.OverallScore, &node.IsActive, &node.CreatedAt, &node.UpdatedAt,
-		)
-		if err != nil {
-			return nil, err
-		}
-		nodes = append(nodes, node)
-	}
-
-	return nodes, rows.Err()
-}
-
-// GetBootstrapNodeCount returns the total count of active bootstrap nodes
-func (bm *BootstrapMonitor) GetBootstrapNodeCount() (int, error) {
-	query := `SELECT COUNT(*) FROM bootstrap_nodes WHERE is_active = true`
-
-	var count int
-	err := bm.db.QueryRow(query).Scan(&count)
-	if err != nil {
-		return 0, err
-	}
-
-	return count, nil
 }

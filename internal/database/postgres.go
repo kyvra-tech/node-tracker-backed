@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
@@ -26,6 +27,12 @@ func NewPostgresDB(cfg *config.DatabaseConfig) (*DB, error) {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
+	// Configure connection pool
+	db.SetMaxOpenConns(25)                 // Maximum number of open connections
+	db.SetMaxIdleConns(5)                  // Maximum number of idle connections
+	db.SetConnMaxLifetime(5 * time.Minute) // Maximum lifetime of a connection
+	db.SetConnMaxIdleTime(1 * time.Minute) // Maximum idle time of a connection
+
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
@@ -46,7 +53,6 @@ func (db *DB) RunMigrations() error {
 
 	migrationPath := fmt.Sprintf("file://%s/internal/database/migrations", wd)
 
-	// Then use migrationPath instead of the hardcoded string:
 	m, err := migrate.NewWithDatabaseInstance(
 		migrationPath,
 		"postgres", driver)

@@ -347,3 +347,80 @@ docker run -p 4622:4622 pactus-tracker-backend
 ### MIT License
 This project is licensed under the MIT License as part of the FUSION program. This allows the Pactus team and community to use, modify, and distribute the work while the grantee retains authorship.
 
+### Project Structure
+
+pactus-nodes-tracker-backend/
+├── cmd/
+│   └── server/
+│       └── main.go
+├── internal/
+│   ├── config/
+│   │   └── config.go
+│   ├── database/
+│   │   ├── postgres.go
+│   │   └── migrations/
+│   ├── repositories/             
+│   │   ├── bootstrap_repository.go
+│   │   ├── status_repository.go
+│   │   ├── grpc_repository.go
+│   │   └── transaction.go
+│   ├── services/
+│   │   ├── bootstrap_monitor.go   
+│   │   ├── node_checker.go
+│   │   └── grpc_monitor.go
+│   ├── handlers/
+│   │   ├── bootstrap.go
+│   │   ├── grpc.go
+│   │   └── health.go              
+│   ├── middleware/               
+│   │   ├── request_id.go
+│   │   ├── logging.go
+│   │   ├── rate_limit.go
+│   │   └── auth.go
+│   ├── models/
+│   │   ├── bootstrap.go
+│   │   ├── grpc.go
+│   │   └── errors.go            
+│   └── scheduler/
+│       └── cron.go
+├── pkg/
+│   ├── logger/
+│   │   └── logger.go
+│   ├── errors/                    
+│   │   └── errors.go
+│   ├── retry/                    
+│   │   └── retry.go
+│   └── metrics/                   
+│       └── prometheus.go
+├── go.mod
+├── go.sum
+├── Dockerfile
+├── docker-compose.yml
+└── README.md
+
+
+┌─────────────────────────────────────────────────────┐
+│                   HTTP Layer                         │
+│              (handlers/bootstrap.go)                 │
+│              (handlers/grpc.go)                      │
+└─────────────────┬───────────────────────────────────┘
+                  │
+┌─────────────────▼───────────────────────────────────┐
+│                Business Logic Layer                  │
+│         (services/bootstrap_monitor.go)              │
+│         (services/grpc_monitor.go)                   │
+│         (services/node_checker.go)                   │
+└─────────────────┬───────────────────────────────────┘
+                  │
+┌─────────────────▼───────────────────────────────────┐
+│              Data Access Layer                       │
+│      (repositories/bootstrap_repository.go)          │
+│      (repositories/status_repository.go)             │
+│      (repositories/grpc_repository.go)               │
+│      (repositories/grpc_status_repository.go)        │
+└─────────────────┬───────────────────────────────────┘
+                  │
+┌─────────────────▼───────────────────────────────────┐
+│                   Database                           │
+│                  PostgreSQL                          │
+└─────────────────────────────────────────────────────┘
