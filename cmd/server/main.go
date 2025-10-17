@@ -71,7 +71,7 @@ func main() {
 
 	// CORS middleware
 	c := cors.New(cors.Options{
-		AllowedOrigins:   []string{"http://localhost:5173", "http://localhost:3000", "https://tracker.kyvra.xyz/"},
+		AllowedOrigins:   []string{"http://localhost:5173", "http://localhost:3000", "https://tracker.kyvra.xyz"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"*"},
 		AllowCredentials: true,
