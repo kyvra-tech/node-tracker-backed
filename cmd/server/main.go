@@ -37,15 +37,21 @@ func main() {
 		appLogger.WithError(err).Fatal("Failed to connect to database")
 	}
 	defer db.Close()
+
 	// Initialize services
+	// 1. Create bootstrap service with local file path
+	bootstrapService := services.NewBootstrapService(
+		appLogger,
+		"./internal/database/bootstrap.json",
+	)
+
 	nodeChecker := services.NewNodeChecker(
 		cfg.Monitor.ConnectionTimeout,
 		cfg.Monitor.MaxRetryAttempts,
 		appLogger,
 	)
-
-	bootstrapMonitor := services.NewBootstrapMonitor(db, nodeChecker, appLogger)
-
+	// 2. Create bootstrap monitor with db, logger, and bootstrap service
+	bootstrapMonitor := services.NewBootstrapMonitor(db.DB, nodeChecker, appLogger, bootstrapService)
 	// Initialize scheduler
 	cronScheduler := scheduler.NewCronScheduler(bootstrapMonitor, appLogger)
 	cronScheduler.Start()
@@ -65,7 +71,7 @@ func main() {
 
 	// CORS middleware
 	c := cors.New(cors.Options{
-		AllowedOrigins:   []string{"http://localhost:5173", "http://localhost:3000"},
+		AllowedOrigins:   []string{"http://localhost:5173", "http://localhost:3000", "https://tracker.kyvra.xyz/"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"*"},
 		AllowCredentials: true,
@@ -79,6 +85,7 @@ func main() {
 	api := router.Group("/api/v1")
 	{
 		api.GET("/bootstrap", bootstrapHandler.GetBootstrapNodes)
+		api.POST("/bootstrap/sync", bootstrapHandler.SyncBootstrapNodesFromFile)
 		api.GET("/health", func(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{
 				"status":    "healthy",
