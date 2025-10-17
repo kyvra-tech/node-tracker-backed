@@ -18,7 +18,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.25.2'  # Adjust to match your go.mod version
+        go-version: '1.25.2'
 
     - name: Cache Go modules
       uses: actions/cache@v3
@@ -31,21 +31,18 @@ jobs:
           ${{ runner.os }}-go-
 
     - name: Download dependencies
-      working-directory: ./pactus-nodes-tracker-backend
       run: go mod download
 
     - name: Run tests
-      working-directory: ./pactus-nodes-tracker-backend
       run: go test -v -race -coverprofile=coverage.out ./...
 
     - name: Display coverage
-      working-directory: ./pactus-nodes-tracker-backend
       run: go tool cover -func=coverage.out
 
     - name: Upload coverage to Codecov (optional)
       uses: codecov/codecov-action@v3
       with:
-        files: ./pactus-nodes-tracker-backend/coverage.out
+        files: ./coverage.out
         flags: unittests
         name: codecov-umbrella
         fail_ci_if_error: false
