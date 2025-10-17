@@ -86,6 +86,7 @@ func main() {
 	{
 		api.GET("/bootstrap", bootstrapHandler.GetBootstrapNodes)
 		api.POST("/bootstrap/sync", bootstrapHandler.SyncBootstrapNodesFromFile)
+		api.GET("/bootstrap/check", bootstrapHandler.CheckAllNodes)
 		api.GET("/health", func(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{
 				"status":    "healthy",

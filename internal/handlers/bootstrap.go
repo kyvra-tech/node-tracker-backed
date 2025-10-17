@@ -78,3 +78,18 @@ func (h *BootstrapHandler) GetBootstrapNodeCount(c *gin.Context) {
 		"timestamp": time.Now().UTC(),
 	})
 }
+
+func (h *BootstrapHandler) CheckAllNodes(c *gin.Context) {
+	err := h.monitor.CheckAllNodes(c.Request.Context())
+	if err != nil {
+		h.logger.WithError(err).Error("Failed to check all nodes")
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to check all nodes",
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"status":    "all nodes checked",
+		"timestamp": time.Now().UTC(),
+	})
+}
