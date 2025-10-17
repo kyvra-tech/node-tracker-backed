@@ -50,15 +50,34 @@ func main() {
 		cfg.Monitor.MaxRetryAttempts,
 		appLogger,
 	)
+	// Initialize gRPC services
+	grpcServerService := services.NewGRPCServerService(
+		appLogger,
+		"./internal/database/servers.json",
+	)
+	grpcChecker := services.NewGRPCChecker(
+		cfg.Monitor.ConnectionTimeout,
+		cfg.Monitor.MaxRetryAttempts,
+		appLogger,
+	)
+
+	grpcMonitor := services.NewGRPCMonitor(
+		db.DB,
+		grpcChecker,
+		appLogger,
+		grpcServerService,
+	)
 	// 2. Create bootstrap monitor with db, logger, and bootstrap service
 	bootstrapMonitor := services.NewBootstrapMonitor(db.DB, nodeChecker, appLogger, bootstrapService)
 	// Initialize scheduler
-	cronScheduler := scheduler.NewCronScheduler(bootstrapMonitor, appLogger)
+	cronScheduler := scheduler.NewCronScheduler(bootstrapMonitor, grpcMonitor, appLogger)
 	cronScheduler.Start()
 	defer cronScheduler.Stop()
 
 	// Initialize HTTP handlers
 	bootstrapHandler := handlers.NewBootstrapHandler(bootstrapMonitor, appLogger)
+
+	grpcHandler := handlers.NewGRPCHandler(grpcMonitor, appLogger)
 
 	// Setup Gin router
 	if cfg.Logger.Level != "debug" {
@@ -87,6 +106,10 @@ func main() {
 		api.GET("/bootstrap", bootstrapHandler.GetBootstrapNodes)
 		api.POST("/bootstrap/sync", bootstrapHandler.SyncBootstrapNodesFromFile)
 		api.GET("/bootstrap/check", bootstrapHandler.CheckAllNodes)
+		api.GET("/grpc", grpcHandler.GetGRPCServers)
+		api.POST("/grpc/sync", grpcHandler.SyncGRPCServersFromFile)
+		api.GET("/grpc/check", grpcHandler.CheckAllServers)
+		api.GET("/grpc/count", grpcHandler.GetGRPCServerCount)
 		api.GET("/health", func(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{
 				"status":    "healthy",
