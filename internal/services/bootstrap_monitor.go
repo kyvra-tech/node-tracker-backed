@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -44,16 +45,45 @@ func (bm *BootstrapMonitor) CheckAllNodes(ctx context.Context) error {
 
 	today := time.Now().Truncate(24 * time.Hour)
 
+	// Use concurrent processing with worker pool
+	const maxConcurrent = 10 // Process 10 nodes at a time
+	semaphore := make(chan struct{}, maxConcurrent)
+	errChan := make(chan error, len(nodes))
+	var wg sync.WaitGroup
+
 	for _, node := range nodes {
-		if err := bm.checkSingleNode(ctx, node, today); err != nil {
-			bm.logger.WithError(err).WithField("node_id", node.ID).Error("Failed to check node")
-			continue
-		}
+		wg.Add(1)
+		go func(n *models.BootstrapNode) {
+			defer wg.Done()
+
+			// Acquire semaphore
+			semaphore <- struct{}{}
+			defer func() { <-semaphore }()
+
+			if err := bm.checkSingleNode(ctx, n, today); err != nil {
+				bm.logger.WithError(err).WithField("node_id", n.ID).Error("Failed to check node")
+				errChan <- err
+			}
+		}(node)
+	}
+
+	// Wait for all goroutines to complete
+	wg.Wait()
+	close(errChan)
+
+	// Collect errors (non-blocking)
+	var errors []error
+	for err := range errChan {
+		errors = append(errors, err)
 	}
 
 	// Update overall scores after checking all nodes
 	if err := bm.bootstrapRepo.UpdateAllScores(ctx); err != nil {
 		bm.logger.WithError(err).Error("Failed to update overall scores")
+	}
+
+	if len(errors) > 0 {
+		bm.logger.WithField("error_count", len(errors)).Warn("Some nodes failed during check")
 	}
 
 	return nil
