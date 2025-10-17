@@ -2,26 +2,29 @@ package services
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
-	"time"
+	"time" //
 
+	"github.com/lib/pq"
 	"github.com/sirupsen/logrus"
 
-	"github.com/kyvra-tech/pactus-nodes-tracker-backend/internal/database"
 	"github.com/kyvra-tech/pactus-nodes-tracker-backend/internal/models"
 )
 
 type BootstrapMonitor struct {
-	db          *database.DB
-	nodeChecker *NodeChecker
-	logger      *logrus.Logger
+	db               *sql.DB
+	logger           *logrus.Logger
+	nodeChecker      *NodeChecker
+	bootstrapService *BootstrapService // Make sure this field exists
 }
 
-func NewBootstrapMonitor(db *database.DB, nodeChecker *NodeChecker, logger *logrus.Logger) *BootstrapMonitor {
+func NewBootstrapMonitor(db *sql.DB, nodeChecker *NodeChecker, logger *logrus.Logger, bootstrapService *BootstrapService) *BootstrapMonitor {
 	return &BootstrapMonitor{
-		db:          db,
-		nodeChecker: nodeChecker,
-		logger:      logger,
+		db:               db,
+		logger:           logger,
+		nodeChecker:      nodeChecker,
+		bootstrapService: bootstrapService,
 	}
 }
 
@@ -226,4 +229,165 @@ func (bm *BootstrapMonitor) getRecentStatuses(nodeID int, days int) ([]models.St
 	}
 
 	return statuses, rows.Err()
+}
+func (bm *BootstrapMonitor) SyncBootstrapNodesFromFile() error {
+	bm.logger.Info("Starting bootstrap node sync from local file")
+
+	// Load bootstrap nodes from local file using the simplified service
+	githubNodes, err := bm.bootstrapService.LoadBootstrapNodes()
+	if err != nil {
+		return fmt.Errorf("failed to load bootstrap nodes: %w", err)
+	}
+
+	// Get current nodes from database
+	currentNodes, err := bm.getAllNodes()
+	if err != nil {
+		return fmt.Errorf("failed to get current nodes: %w", err)
+	}
+
+	// Create maps for efficient lookup
+	currentNodesMap := make(map[string]*models.BootstrapNode)
+	for _, node := range currentNodes {
+		currentNodesMap[node.Address] = node
+	}
+
+	githubNodesMap := make(map[string]*BootstrapNode)
+	for _, node := range githubNodes {
+		githubNodesMap[node.Address] = node
+	}
+
+	// Process changes
+	stats := &SyncStats{}
+
+	// Add new nodes and update existing ones
+	for _, githubNode := range githubNodes {
+		if existingNode, exists := currentNodesMap[githubNode.Address]; exists {
+			// Update existing node if needed
+			if bm.shouldUpdateNode(existingNode, githubNode) {
+				if err := bm.updateNodeFromGitHub(existingNode, githubNode); err != nil {
+					bm.logger.WithError(err).WithField("address", githubNode.Address).Error("Failed to update node")
+					stats.Errors++
+					continue
+				}
+				stats.Updated++
+			}
+		} else {
+			// Add new node
+			if err := bm.addNodeFromGitHub(githubNode); err != nil {
+				bm.logger.WithError(err).WithField("address", githubNode.Address).Error("Failed to add node")
+				stats.Errors++
+				continue
+			}
+			stats.Added++
+		}
+	}
+
+	// Deactivate nodes that are no longer in the file
+	stats.Deactivated = bm.deactivateRemovedNodes(githubNodesMap, currentNodes)
+
+	bm.logger.WithFields(logrus.Fields{
+		"added":       stats.Added,
+		"updated":     stats.Updated,
+		"deactivated": stats.Deactivated,
+		"errors":      stats.Errors,
+	}).Info("Completed bootstrap node sync")
+
+	return nil
+}
+
+type SyncStats struct {
+	Added       int
+	Updated     int
+	Deactivated int
+	Errors      int
+}
+
+func (bm *BootstrapMonitor) addNodeFromGitHub(githubNode *BootstrapNode) error {
+	query := `
+        INSERT INTO bootstrap_nodes (name, email, website, address, is_active, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, true, NOW(), NOW())
+        ON CONFLICT (address) DO NOTHING
+    `
+
+	_, err := bm.db.Exec(query, githubNode.Name, githubNode.Email, githubNode.Website, githubNode.Address)
+	return err
+}
+
+func (bm *BootstrapMonitor) updateNodeFromGitHub(existingNode *models.BootstrapNode, githubNode *BootstrapNode) error {
+	query := `
+        UPDATE bootstrap_nodes 
+        SET name = $1, email = $2, website = $3, updated_at = NOW()
+        WHERE address = $4
+    `
+
+	_, err := bm.db.Exec(query, githubNode.Name, githubNode.Email, githubNode.Website, githubNode.Address)
+	return err
+}
+
+func (bm *BootstrapMonitor) shouldUpdateNode(existing *models.BootstrapNode, github *BootstrapNode) bool {
+	return existing.Name != github.Name ||
+		existing.Email != github.Email ||
+		existing.Website != github.Website
+}
+
+func (bm *BootstrapMonitor) deactivateRemovedNodes(githubNodes map[string]*BootstrapNode, currentNodes []*models.BootstrapNode) int {
+	var nodesToDeactivate []string
+	for _, node := range currentNodes {
+		if _, exists := githubNodes[node.Address]; !exists && node.IsActive {
+			nodesToDeactivate = append(nodesToDeactivate, node.Address)
+		}
+	}
+
+	if len(nodesToDeactivate) > 0 {
+		query := `UPDATE bootstrap_nodes SET is_active = false, updated_at = NOW() WHERE address = ANY($1)`
+		_, err := bm.db.Exec(query, pq.Array(nodesToDeactivate))
+		if err != nil {
+			bm.logger.WithError(err).Error("Failed to deactivate removed nodes")
+			return 0
+		}
+	}
+
+	return len(nodesToDeactivate)
+}
+
+func (bm *BootstrapMonitor) getAllNodes() ([]*models.BootstrapNode, error) {
+	query := `
+        SELECT id, name, email, website, address, overall_score, is_active, created_at, updated_at
+        FROM bootstrap_nodes 
+        ORDER BY id
+    `
+
+	rows, err := bm.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var nodes []*models.BootstrapNode
+	for rows.Next() {
+		node := &models.BootstrapNode{}
+		err := rows.Scan(
+			&node.ID, &node.Name, &node.Email, &node.Website, &node.Address,
+			&node.OverallScore, &node.IsActive, &node.CreatedAt, &node.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		nodes = append(nodes, node)
+	}
+
+	return nodes, rows.Err()
+}
+
+// GetBootstrapNodeCount returns the total count of active bootstrap nodes
+func (bm *BootstrapMonitor) GetBootstrapNodeCount() (int, error) {
+	query := `SELECT COUNT(*) FROM bootstrap_nodes WHERE is_active = true`
+
+	var count int
+	err := bm.db.QueryRow(query).Scan(&count)
+	if err != nil {
+		return 0, err
+	}
+
+	return count, nil
 }

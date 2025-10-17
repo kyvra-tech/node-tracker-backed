@@ -41,6 +41,20 @@ func (s *CronScheduler) Start() {
 		return
 	}
 
+	_, err = s.cron.AddFunc("0 */6 * * *", func() {
+		s.logger.Info("Starting GitHub bootstrap node sync")
+		if err := s.monitor.SyncBootstrapNodesFromFile(); err != nil {
+			s.logger.WithError(err).Error("Failed to sync bootstrap nodes from file")
+		} else {
+			s.logger.Info("Completed bootstrap node sync from file")
+		}
+	})
+
+	if err != nil {
+		s.logger.WithError(err).Error("Failed to schedule GitHub sync")
+		return
+	}
+
 	s.cron.Start()
 	s.logger.Info("Cron scheduler started")
 }
