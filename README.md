@@ -348,7 +348,7 @@ docker run -p 4622:4622 pactus-tracker-backend
 This project is licensed under the MIT License as part of the FUSION program. This allows the Pactus team and community to use, modify, and distribute the work while the grantee retains authorship.
 
 ### Project Structure
-
+```
 pactus-nodes-tracker-backend/
 ├── cmd/
 │   └── server/
@@ -424,3 +424,4 @@ pactus-nodes-tracker-backend/
 │                   Database                           │
 │                  PostgreSQL                          │
 └─────────────────────────────────────────────────────┘
+```
