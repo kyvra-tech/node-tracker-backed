@@ -11,11 +11,11 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/rs/cors"
 
 	"github.com/kyvra-tech/pactus-nodes-tracker-backend/internal/config"
 	"github.com/kyvra-tech/pactus-nodes-tracker-backend/internal/database"
 	"github.com/kyvra-tech/pactus-nodes-tracker-backend/internal/handlers"
+	"github.com/kyvra-tech/pactus-nodes-tracker-backend/internal/middleware"
 	"github.com/kyvra-tech/pactus-nodes-tracker-backend/internal/repositories"
 	"github.com/kyvra-tech/pactus-nodes-tracker-backend/internal/scheduler"
 	"github.com/kyvra-tech/pactus-nodes-tracker-backend/internal/services"
@@ -44,6 +44,7 @@ func main() {
 	statusRepo := repositories.NewStatusRepository(db.DB)
 	grpcRepo := repositories.NewGRPCRepository(db.DB)
 	grpcStatusRepo := repositories.NewGRPCStatusRepository(db.DB)
+
 	// Initialize services
 	nodeChecker := services.NewNodeChecker(
 		cfg.Monitor.ConnectionTimeout,
@@ -64,7 +65,7 @@ func main() {
 		bootstrapService,
 	)
 
-	// Initialize gRPC services (keep existing implementation)
+	// Initialize gRPC services
 	grpcServerService := services.NewGRPCServerService(
 		appLogger,
 		"./internal/database/servers.json",
@@ -97,40 +98,68 @@ func main() {
 	}
 
 	router := gin.New()
-	router.Use(gin.Logger())
-	router.Use(gin.Recovery())
 
-	// CORS middleware
-	c := cors.New(cors.Options{
-		AllowedOrigins:   []string{"http://localhost:5173", "http://localhost:3000", "https://tracker.kyvra.xyz"},
-		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"*"},
+	// ============ MIDDLEWARE SETUP ============
+
+	// 1. Request ID - must be first to ensure all logs have request ID
+	router.Use(middleware.RequestID())
+
+	// 2. Recovery - catch panics
+	router.Use(middleware.Recovery(appLogger))
+
+	// 3. Structured Logging
+	router.Use(middleware.StructuredLogger(appLogger))
+
+	// 4. Security Headers
+	router.Use(middleware.Security())
+
+	// 5. CORS
+	corsConfig := middleware.CORSConfig{
+		AllowOrigins:     []string{"http://localhost:5173", "http://localhost:3000", "https://tracker.kyvra.xyz"},
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Request-ID"},
+		ExposeHeaders:    []string{"X-Request-ID"},
 		AllowCredentials: true,
-	})
-	router.Use(func(ctx *gin.Context) {
-		c.HandlerFunc(ctx.Writer, ctx.Request)
-		ctx.Next()
-	})
+		MaxAge:           3600,
+	}
+	router.Use(middleware.CORS(corsConfig))
 
-	// API routes
+	// 6. Rate Limiting - 100 requests per minute per IP
+	rateLimiter := middleware.NewRateLimiter(100, time.Minute, appLogger)
+	router.Use(rateLimiter.Middleware())
+
+	// 7. Request Timeout - 60 seconds max
+	router.Use(middleware.Timeout(60*time.Second, appLogger))
+
+	// ============ API ROUTES ============
+
 	api := router.Group("/api/v1")
 	{
+		// Bootstrap endpoints
 		api.GET("/bootstrap", bootstrapHandler.GetBootstrapNodes)
 		api.POST("/bootstrap/sync", bootstrapHandler.SyncBootstrapNodesFromFile)
 		api.GET("/bootstrap/check", bootstrapHandler.CheckAllNodes)
 		api.GET("/bootstrap/count", bootstrapHandler.GetBootstrapNodeCount)
 
+		// gRPC endpoints
 		api.GET("/grpc", grpcHandler.GetGRPCServers)
 		api.POST("/grpc/sync", grpcHandler.SyncGRPCServersFromFile)
 		api.GET("/grpc/check", grpcHandler.CheckAllServers)
 		api.GET("/grpc/count", grpcHandler.GetGRPCServerCount)
 
+		// Health check
 		api.GET("/health", func(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{
-				"status":    "healthy",
-				"timestamp": time.Now().UTC(),
-				"version":   "1.0.0",
+				"status":     "healthy",
+				"timestamp":  time.Now().UTC(),
+				"version":    "1.0.0",
+				"request_id": middleware.GetRequestID(c),
 			})
+		})
+
+		// Rate limiter stats (for monitoring)
+		api.GET("/stats/rate-limiter", func(c *gin.Context) {
+			c.JSON(http.StatusOK, rateLimiter.GetStats())
 		})
 	}
 

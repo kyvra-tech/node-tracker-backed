@@ -8,6 +8,8 @@ import (
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+
+	pactus "github.com/pactus-project/pactus/www/grpc/gen/go"
 )
 
 type GRPCChecker struct {
@@ -86,11 +88,12 @@ func (gc *GRPCChecker) attemptGRPCPing(ctx context.Context, address string) (boo
 	}
 	defer conn.Close()
 
-	// Call Ping method (simplified - you'll need to import Pactus gRPC definitions)
-	// For now, just checking connection is sufficient
-	// When you have the proto definitions, you'd do:
-	// client := pactus.NewNetworkClient(conn)
-	// _, err = client.GetNetworkInfo(ctx, &pactus.GetNetworkInfoRequest{})
+	// Create Network client and call GetNetworkInfo (this acts as a ping)
+	client := pactus.NewNetworkClient(conn)
+	_, err = client.GetNetworkInfo(ctx, &pactus.GetNetworkInfoRequest{})
+	if err != nil {
+		return false, fmt.Errorf("ping failed: %w", err)
+	}
 
 	return true, nil
 }
