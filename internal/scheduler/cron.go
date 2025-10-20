@@ -41,8 +41,8 @@ func NewCronScheduler(
 }
 
 func (s *CronScheduler) Start() {
-	// Schedule daily gRPC server checks at 7 AM UTC
-	_, err := s.cron.AddFunc("0 7 * * *", s.createJobWrapper("gRPC Health Check", func(ctx context.Context) error {
+	// Schedule daily gRPC server checks at 2 AM UTC
+	_, err := s.cron.AddFunc("0 2 * * *", s.createJobWrapper("gRPC Health Check", func(ctx context.Context) error {
 		return s.grpcMonitor.CheckAllServers(ctx)
 	}))
 	if err != nil {
@@ -57,8 +57,8 @@ func (s *CronScheduler) Start() {
 		s.logger.WithError(err).Error("Failed to schedule gRPC sync")
 	}
 
-	// Schedule daily bootstrap node checks at 6 AM UTC
-	_, err = s.cron.AddFunc("0 6 * * *", s.createJobWrapper("Bootstrap Health Check", func(ctx context.Context) error {
+	// Schedule daily bootstrap node checks at 1 AM UTC
+	_, err = s.cron.AddFunc("0 1 * * *", s.createJobWrapper("Bootstrap Health Check", func(ctx context.Context) error {
 		return s.monitor.CheckAllNodes(ctx)
 	}))
 	if err != nil {
