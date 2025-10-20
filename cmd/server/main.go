@@ -155,6 +155,8 @@ func main() {
 			c.JSON(http.StatusOK, rateLimiter.GetStats())
 		})
 	}
+	// Metrics endpoint at root level (outside /api/v1)
+	// router.GET("/metrics", gin.WrapH(metrics.Handler()))  // <-- COMMENT THIS OUT FOR NOW
 
 	// Start server
 	serverAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
