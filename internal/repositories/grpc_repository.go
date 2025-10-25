@@ -40,10 +40,10 @@ func NewGRPCRepository(db *sql.DB) GRPCRepository {
 
 func (r *grpcRepository) GetActiveServers(ctx context.Context) ([]*models.GRPCServer, error) {
 	query := `
-		SELECT id, name, address, network, overall_score, is_active, created_at, updated_at
-		FROM grpc_servers 
-		WHERE is_active = true
-		ORDER BY network, id
+SELECT id, name, address, network, overall_score, is_active, email, website, created_at, updated_at
+FROM grpc_servers 
+WHERE is_active = true
+ORDER BY network, id
 	`
 
 	rows, err := r.db.QueryContext(ctx, query)
@@ -57,9 +57,9 @@ func (r *grpcRepository) GetActiveServers(ctx context.Context) ([]*models.GRPCSe
 
 func (r *grpcRepository) GetAllServers(ctx context.Context) ([]*models.GRPCServer, error) {
 	query := `
-		SELECT id, name, address, network, overall_score, is_active, created_at, updated_at
-		FROM grpc_servers 
-		ORDER BY network, id
+SELECT id, name, address, network, overall_score, is_active, email, website, created_at, updated_at
+FROM grpc_servers 
+ORDER BY network, id
 	`
 
 	rows, err := r.db.QueryContext(ctx, query)
@@ -73,9 +73,9 @@ func (r *grpcRepository) GetAllServers(ctx context.Context) ([]*models.GRPCServe
 
 func (r *grpcRepository) GetServerByID(ctx context.Context, id int) (*models.GRPCServer, error) {
 	query := `
-		SELECT id, name, address, network, overall_score, is_active, created_at, updated_at
-		FROM grpc_servers 
-		WHERE id = $1
+SELECT id, name, address, network, overall_score, is_active, email, website, created_at, updated_at
+FROM grpc_servers 
+WHERE id = $1
 	`
 
 	server := &models.GRPCServer{}
@@ -96,9 +96,9 @@ func (r *grpcRepository) GetServerByID(ctx context.Context, id int) (*models.GRP
 
 func (r *grpcRepository) GetServerByAddress(ctx context.Context, address string) (*models.GRPCServer, error) {
 	query := `
-		SELECT id, name, address, network, overall_score, is_active, created_at, updated_at
-		FROM grpc_servers 
-		WHERE address = $1
+SELECT id, name, address, network, overall_score, is_active, email, website, created_at, updated_at
+FROM grpc_servers 
+WHERE address = $1
 	`
 
 	server := &models.GRPCServer{}
@@ -119,10 +119,10 @@ func (r *grpcRepository) GetServerByAddress(ctx context.Context, address string)
 
 func (r *grpcRepository) GetServersByNetwork(ctx context.Context, network string) ([]*models.GRPCServer, error) {
 	query := `
-		SELECT id, name, address, network, overall_score, is_active, created_at, updated_at
-		FROM grpc_servers 
-		WHERE network = $1 AND is_active = true
-		ORDER BY id
+SELECT id, name, address, network, overall_score, is_active, email, website, created_at, updated_at
+FROM grpc_servers 
+WHERE network = $1 AND is_active = true
+ORDER BY id
 	`
 
 	rows, err := r.db.QueryContext(ctx, query, network)
@@ -136,14 +136,14 @@ func (r *grpcRepository) GetServersByNetwork(ctx context.Context, network string
 
 func (r *grpcRepository) CreateServer(ctx context.Context, server *models.GRPCServer) error {
 	query := `
-		INSERT INTO grpc_servers (name, address, network, is_active, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, NOW(), NOW())
-		ON CONFLICT (address) DO NOTHING
-		RETURNING id, created_at, updated_at
-	`
+        INSERT INTO grpc_servers (name, address, network, email, website, is_active, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+        ON CONFLICT (address) DO NOTHING
+        RETURNING id, created_at, updated_at
+    `
 
 	err := r.db.QueryRowContext(ctx, query,
-		server.Name, server.Address, server.Network, server.IsActive,
+		server.Name, server.Address, server.Network, server.Email, server.Website, server.IsActive,
 	).Scan(&server.ID, &server.CreatedAt, &server.UpdatedAt)
 
 	if err == sql.ErrNoRows {
@@ -158,14 +158,14 @@ func (r *grpcRepository) CreateServer(ctx context.Context, server *models.GRPCSe
 
 func (r *grpcRepository) UpdateServer(ctx context.Context, server *models.GRPCServer) error {
 	query := `
-		UPDATE grpc_servers 
-		SET name = $1, network = $2, updated_at = NOW()
-		WHERE address = $3
-		RETURNING updated_at
-	`
+	UPDATE grpc_servers 
+	SET name = $1, network = $2, email = $3, website = $4, updated_at = NOW()
+	WHERE address = $5
+	RETURNING updated_at
+`
 
 	err := r.db.QueryRowContext(ctx, query,
-		server.Name, server.Network, server.Address,
+		server.Name, server.Network, server.Email, server.Website, server.Address,
 	).Scan(&server.UpdatedAt)
 
 	if err == sql.ErrNoRows {
@@ -277,7 +277,8 @@ func (r *grpcRepository) scanServers(rows *sql.Rows) ([]*models.GRPCServer, erro
 		server := &models.GRPCServer{}
 		err := rows.Scan(
 			&server.ID, &server.Name, &server.Address, &server.Network,
-			&server.OverallScore, &server.IsActive, &server.CreatedAt, &server.UpdatedAt,
+			&server.OverallScore, &server.IsActive, &server.Email, &server.Website,
+			&server.CreatedAt, &server.UpdatedAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scan server: %w", err)

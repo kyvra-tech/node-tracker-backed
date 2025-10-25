@@ -11,6 +11,8 @@ type GRPCServer struct {
 	Network      string    `json:"network" db:"network"` // mainnet or testnet
 	OverallScore float64   `json:"overallScore" db:"overall_score"`
 	IsActive     bool      `json:"isActive" db:"is_active"`
+	Email        string    `json:"email" db:"email"`
+	Website      string    `json:"website" db:"website"`
 	CreatedAt    time.Time `json:"createdAt" db:"created_at"`
 	UpdatedAt    time.Time `json:"updatedAt" db:"updated_at"`
 }
@@ -31,6 +33,8 @@ type GRPCServerResponse struct {
 	Name         string       `json:"name"`
 	Address      string       `json:"address"`
 	Network      string       `json:"network"`
+	Email        string       `json:"email"`
+	Website      string       `json:"website"`
 	Status       []StatusItem `json:"status"`
 	OverallScore float64      `json:"overallScore"`
 }

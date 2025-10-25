@@ -137,13 +137,13 @@ func main() {
 	{
 		// Bootstrap endpoints
 		api.GET("/bootstrap", bootstrapHandler.GetBootstrapNodes)
-		api.POST("/bootstrap/sync", bootstrapHandler.SyncBootstrapNodesFromFile)
+		api.POST("/bootstrap/sync", bootstrapHandler.SyncBootstrapNodes)
 		api.GET("/bootstrap/check", bootstrapHandler.CheckAllNodes)
 		api.GET("/bootstrap/count", bootstrapHandler.GetBootstrapNodeCount)
 
 		// gRPC endpoints
 		api.GET("/grpc", grpcHandler.GetGRPCServers)
-		api.POST("/grpc/sync", grpcHandler.SyncGRPCServersFromFile)
+		api.POST("/grpc/sync", grpcHandler.SyncGRPCServers)
 		api.GET("/grpc/check", grpcHandler.CheckAllServers)
 		api.GET("/grpc/count", grpcHandler.GetGRPCServerCount)
 

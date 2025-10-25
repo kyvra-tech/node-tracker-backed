@@ -37,10 +37,10 @@ func (h *GRPCHandler) GetGRPCServers(c *gin.Context) {
 	c.JSON(http.StatusOK, servers)
 }
 
-func (h *GRPCHandler) SyncGRPCServersFromFile(c *gin.Context) {
+func (h *GRPCHandler) SyncGRPCServers(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	err := h.monitor.SyncGRPCServersFromFile(ctx)
+	err := h.monitor.SyncGRPCServers(ctx)
 	if err != nil {
 		h.logger.WithError(err).Error("Failed to sync gRPC servers")
 		c.JSON(http.StatusInternalServerError, gin.H{

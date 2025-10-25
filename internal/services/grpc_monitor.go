@@ -9,6 +9,7 @@ import (
 
 	"github.com/kyvra-tech/pactus-nodes-tracker-backend/internal/models"
 	"github.com/kyvra-tech/pactus-nodes-tracker-backend/internal/repositories"
+	"github.com/pactus-project/pactus/wallet"
 )
 
 type GRPCMonitor struct {
@@ -118,6 +119,8 @@ func (gm *GRPCMonitor) GetGRPCServersWithStatus(ctx context.Context) ([]*models.
 			Name:         server.Name,
 			Address:      server.Address,
 			Network:      server.Network,
+			Email:        server.Email,
+			Website:      server.Website,
 			Status:       statuses,
 			OverallScore: server.OverallScore,
 		}
@@ -128,22 +131,26 @@ func (gm *GRPCMonitor) GetGRPCServersWithStatus(ctx context.Context) ([]*models.
 	return response, nil
 }
 
-// SyncGRPCServersFromFile syncs servers from servers.json
-func (gm *GRPCMonitor) SyncGRPCServersFromFile(ctx context.Context) error {
-	gm.logger.Info("Starting gRPC server sync from file")
+func (gm *GRPCMonitor) SyncGRPCServers(ctx context.Context) error {
+	gm.logger.Info("Starting gRPC server sync from Pactus")
 
-	config, err := gm.grpcServerService.LoadGRPCServers()
+	mainnetServers, err := wallet.GetServerList("mainnet")
 	if err != nil {
-		return fmt.Errorf("failed to load servers: %w", err)
+		return fmt.Errorf("failed to load gRPC servers from GitHub: %w", err)
+	}
+
+	testnetServers, err := wallet.GetServerList("testnet")
+	if err != nil {
+		return fmt.Errorf("failed to load gRPC servers from GitHub: %w", err)
 	}
 
 	// Sync mainnet servers
-	if err := gm.syncNetworkServers(ctx, "mainnet", config.Mainnet); err != nil {
+	if err := gm.syncNetworkServers(ctx, "mainnet", mainnetServers); err != nil {
 		return fmt.Errorf("failed to sync mainnet: %w", err)
 	}
 
 	// Sync testnet servers
-	if err := gm.syncNetworkServers(ctx, "testnet", config.Testnet); err != nil {
+	if err := gm.syncNetworkServers(ctx, "testnet", testnetServers); err != nil {
 		return fmt.Errorf("failed to sync testnet: %w", err)
 	}
 
@@ -152,10 +159,10 @@ func (gm *GRPCMonitor) SyncGRPCServersFromFile(ctx context.Context) error {
 }
 
 // syncNetworkServers syncs servers for a specific network
-func (gm *GRPCMonitor) syncNetworkServers(ctx context.Context, network string, addresses []string) error {
-	for _, address := range addresses {
+func (gm *GRPCMonitor) syncNetworkServers(ctx context.Context, network string, servers []wallet.ServerInfo) error {
+	for _, server := range servers {
 		// Check if server exists
-		exists, err := gm.grpcRepo.ServerExists(ctx, address)
+		exists, err := gm.grpcRepo.ServerExists(ctx, server.Address)
 		if err != nil {
 			return err
 		}
@@ -163,17 +170,34 @@ func (gm *GRPCMonitor) syncNetworkServers(ctx context.Context, network string, a
 		if !exists {
 			// Add new server
 			server := &models.GRPCServer{
-				Name:     gm.extractServerName(address),
-				Address:  address,
+				Name:     server.Name,
+				Address:  server.Address,
 				Network:  network,
+				Email:    server.Email,
+				Website:  server.Website,
 				IsActive: true,
 			}
 
 			if err := gm.grpcRepo.CreateServer(ctx, server); err != nil {
-				gm.logger.WithError(err).WithField("address", address).Error("Failed to add server")
+				gm.logger.WithError(err).WithField("address", server.Address).Error("Failed to add server")
 				continue
 			}
-			gm.logger.WithField("address", address).Info("Added new server")
+			gm.logger.WithField("address", server.Address).Info("Added new server")
+		} else {
+			// Update existing server
+			server := &models.GRPCServer{
+				Name:    server.Name,
+				Address: server.Address,
+				Network: network,
+				Email:   server.Email,
+				Website: server.Website,
+			}
+
+			if err := gm.grpcRepo.UpdateServer(ctx, server); err != nil {
+				gm.logger.WithError(err).WithField("address", server.Address).Error("Failed to update server")
+				continue
+			}
+			gm.logger.WithField("address", server.Address).Info("Updated existing server")
 		}
 	}
 

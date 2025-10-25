@@ -51,7 +51,7 @@ func (s *CronScheduler) Start() {
 
 	// Schedule gRPC server sync every 6 hours
 	_, err = s.cron.AddFunc("30 */6 * * *", s.createJobWrapper("gRPC Sync", func(ctx context.Context) error {
-		return s.grpcMonitor.SyncGRPCServersFromFile(ctx)
+		return s.grpcMonitor.SyncGRPCServers(ctx)
 	}))
 	if err != nil {
 		s.logger.WithError(err).Error("Failed to schedule gRPC sync")
@@ -67,7 +67,7 @@ func (s *CronScheduler) Start() {
 
 	// Schedule bootstrap node sync every 6 hours
 	_, err = s.cron.AddFunc("0 */6 * * *", s.createJobWrapper("Bootstrap Sync", func(ctx context.Context) error {
-		return s.monitor.SyncBootstrapNodesFromFile(ctx)
+		return s.monitor.SyncBootstrapNodes(ctx)
 	}))
 	if err != nil {
 		s.logger.WithError(err).Error("Failed to schedule bootstrap sync")
