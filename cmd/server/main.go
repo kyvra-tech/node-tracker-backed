@@ -91,7 +91,7 @@ func main() {
 	// Initialize HTTP handlers
 	bootstrapHandler := handlers.NewBootstrapHandler(bootstrapMonitor, appLogger)
 	grpcHandler := handlers.NewGRPCHandler(grpcMonitor, appLogger)
-
+	healthHandler := handlers.NewHealthHandler(db.DB, appLogger, "1.0.0")
 	// Setup Gin router
 	if cfg.Logger.Level != "debug" {
 		gin.SetMode(gin.ReleaseMode)
@@ -147,21 +147,16 @@ func main() {
 		api.GET("/grpc/check", grpcHandler.CheckAllServers)
 		api.GET("/grpc/count", grpcHandler.GetGRPCServerCount)
 
-		// Health check
-		api.GET("/health", func(c *gin.Context) {
-			c.JSON(http.StatusOK, gin.H{
-				"status":     "healthy",
-				"timestamp":  time.Now().UTC(),
-				"version":    "1.0.0",
-				"request_id": middleware.GetRequestID(c),
-			})
-		})
+		// Simple health check
+		api.GET("/health", healthHandler.Health)
 
 		// Rate limiter stats (for monitoring)
 		api.GET("/stats/rate-limiter", func(c *gin.Context) {
 			c.JSON(http.StatusOK, rateLimiter.GetStats())
 		})
 	}
+	// Metrics endpoint at root level (outside /api/v1)
+	// router.GET("/metrics", gin.WrapH(metrics.Handler()))  // <-- COMMENT THIS OUT FOR NOW
 
 	// Start server
 	serverAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
