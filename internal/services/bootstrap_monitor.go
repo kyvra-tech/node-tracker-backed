@@ -6,10 +6,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sirupsen/logrus"
-
 	"github.com/kyvra-tech/pactus-nodes-tracker-backend/internal/models"
 	"github.com/kyvra-tech/pactus-nodes-tracker-backend/internal/repositories"
+	"github.com/pactus-project/pactus/config"
+	"github.com/sirupsen/logrus"
 )
 
 type BootstrapMonitor struct {
@@ -158,17 +158,25 @@ func (bm *BootstrapMonitor) GetBootstrapNodesWithStatus(ctx context.Context) ([]
 	return response, nil
 }
 
-// SyncBootstrapNodesFromFile synchronizes nodes from the local JSON file
-func (bm *BootstrapMonitor) SyncBootstrapNodesFromFile(ctx context.Context) error {
-	bm.logger.Info("Starting bootstrap node sync from local file")
+// SyncBootstrapNodes synchronizes nodes from the Pactus GitHub repository
+func (bm *BootstrapMonitor) SyncBootstrapNodes(ctx context.Context) error {
+	bm.logger.Info("Starting bootstrap node sync from GitHub")
 
-	// Load bootstrap nodes from local file
-	githubNodes, err := bm.bootstrapService.LoadBootstrapNodes()
+	githubNodes, err := config.GetBootstrapNodes()
 	if err != nil {
-		return fmt.Errorf("failed to load bootstrap nodes: %w", err)
+		return fmt.Errorf("failed to load bootstrap nodes from GitHub: %w", err)
 	}
 
-	// Get current nodes from database
+	var nodes []*BootstrapNode
+	for _, node := range githubNodes {
+		nodes = append(nodes, &BootstrapNode{
+			Name:    node.Name,
+			Email:   node.Email,
+			Website: node.Website,
+			Address: node.Address,
+		})
+	}
+
 	currentNodes, err := bm.bootstrapRepo.GetAllNodes(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get current nodes: %w", err)
@@ -181,7 +189,7 @@ func (bm *BootstrapMonitor) SyncBootstrapNodesFromFile(ctx context.Context) erro
 	}
 
 	githubNodesMap := make(map[string]*BootstrapNode)
-	for _, node := range githubNodes {
+	for _, node := range nodes {
 		githubNodesMap[node.Address] = node
 	}
 
@@ -189,7 +197,7 @@ func (bm *BootstrapMonitor) SyncBootstrapNodesFromFile(ctx context.Context) erro
 	stats := &SyncStats{}
 
 	// Add new nodes and update existing ones
-	for _, githubNode := range githubNodes {
+	for _, githubNode := range nodes {
 		if existingNode, exists := currentNodesMap[githubNode.Address]; exists {
 			// Update existing node if needed
 			if bm.shouldUpdateNode(existingNode, githubNode) {
@@ -245,7 +253,7 @@ func (bm *BootstrapMonitor) SyncBootstrapNodesFromFile(ctx context.Context) erro
 		"updated":     stats.Updated,
 		"deactivated": stats.Deactivated,
 		"errors":      stats.Errors,
-	}).Info("Completed bootstrap node sync")
+	}).Info("Completed bootstrap node sync from GitHub")
 
 	return nil
 }

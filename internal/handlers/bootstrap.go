@@ -37,14 +37,14 @@ func (h *BootstrapHandler) GetBootstrapNodes(c *gin.Context) {
 	c.JSON(http.StatusOK, nodes)
 }
 
-func (h *BootstrapHandler) SyncBootstrapNodesFromFile(c *gin.Context) {
+func (h *BootstrapHandler) SyncBootstrapNodes(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	err := h.monitor.SyncBootstrapNodesFromFile(ctx)
+	err := h.monitor.SyncBootstrapNodes(ctx)
 	if err != nil {
-		h.logger.WithError(err).Error("Failed to sync bootstrap nodes from file")
+		h.logger.WithError(err).Error("Failed to sync bootstrap nodes from Pactus")
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to sync bootstrap nodes from file",
+			"error":   "Failed to sync bootstrap nodes from Pactus",
 			"details": err.Error(),
 		})
 		return
