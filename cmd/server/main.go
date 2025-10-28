@@ -89,9 +89,11 @@ func main() {
 	defer cronScheduler.Stop()
 
 	// Initialize HTTP handlers
-	bootstrapHandler := handlers.NewBootstrapHandler(bootstrapMonitor, appLogger)
-	grpcHandler := handlers.NewGRPCHandler(grpcMonitor, appLogger)
 	healthHandler := handlers.NewHealthHandler(db.DB, appLogger, "1.0.0")
+
+	// Initialize JSON-RPC service and handler
+	jsonRPCService := services.NewJsonRPCService(grpcMonitor, bootstrapMonitor, appLogger)
+	jsonRPCHandler := handlers.NewJsonRPCHandler(jsonRPCService, appLogger)
 	// Setup Gin router
 	if cfg.Logger.Level != "debug" {
 		gin.SetMode(gin.ReleaseMode)
@@ -135,17 +137,8 @@ func main() {
 
 	api := router.Group("/api/v1")
 	{
-		// Bootstrap endpoints
-		api.GET("/bootstrap", bootstrapHandler.GetBootstrapNodes)
-		api.POST("/bootstrap/sync", bootstrapHandler.SyncBootstrapNodes)
-		api.GET("/bootstrap/check", bootstrapHandler.CheckAllNodes)
-		api.GET("/bootstrap/count", bootstrapHandler.GetBootstrapNodeCount)
 
-		// gRPC endpoints
-		api.GET("/grpc", grpcHandler.GetGRPCServers)
-		api.POST("/grpc/sync", grpcHandler.SyncGRPCServers)
-		api.GET("/grpc/check", grpcHandler.CheckAllServers)
-		api.GET("/grpc/count", grpcHandler.GetGRPCServerCount)
+		api.POST("/json-rpc", jsonRPCHandler.HandleRequest)
 
 		// Simple health check
 		api.GET("/health", healthHandler.Health)
