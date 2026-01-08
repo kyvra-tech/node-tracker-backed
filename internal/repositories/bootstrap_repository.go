@@ -21,10 +21,12 @@ type BootstrapRepository interface {
 	CreateNode(ctx context.Context, node *models.BootstrapNode) error
 	UpdateNode(ctx context.Context, node *models.BootstrapNode) error
 	UpdateNodeScore(ctx context.Context, nodeID int, score float64) error
+	UpdateNodeGeo(ctx context.Context, nodeID int, country, countryCode, city string, lat, lon float64) error
 	DeactivateNodes(ctx context.Context, addresses []string) error
 
 	// Aggregations
 	GetNodeCount(ctx context.Context, activeOnly bool) (int, error)
+	GetActiveCount(ctx context.Context) (int, error)
 	UpdateAllScores(ctx context.Context) error
 }
 
@@ -238,6 +240,34 @@ func (r *bootstrapRepository) UpdateAllScores(ctx context.Context) error {
 	_, err := r.db.ExecContext(ctx, query)
 	if err != nil {
 		return fmt.Errorf("update all scores: %w", err)
+	}
+
+	return nil
+}
+
+func (r *bootstrapRepository) GetActiveCount(ctx context.Context) (int, error) {
+	return r.GetNodeCount(ctx, true)
+}
+
+func (r *bootstrapRepository) UpdateNodeGeo(ctx context.Context, nodeID int, country, countryCode, city string, lat, lon float64) error {
+	query := `
+		UPDATE bootstrap_nodes 
+		SET country = $1, country_code = $2, city = $3, latitude = $4, longitude = $5, updated_at = NOW()
+		WHERE id = $6
+	`
+
+	result, err := r.db.ExecContext(ctx, query, country, countryCode, city, lat, lon, nodeID)
+	if err != nil {
+		return fmt.Errorf("update node geo: %w", err)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("check rows affected: %w", err)
+	}
+
+	if rows == 0 {
+		return fmt.Errorf("node not found: %d", nodeID)
 	}
 
 	return nil
