@@ -13,6 +13,12 @@ type GRPCServer struct {
 	IsActive     bool      `json:"isActive" db:"is_active"`
 	Email        string    `json:"email" db:"email"`
 	Website      string    `json:"website" db:"website"`
+	// Geographic fields (Phase 2)
+	Country     string  `json:"country" db:"country"`
+	CountryCode string  `json:"countryCode" db:"country_code"`
+	City        string  `json:"city" db:"city"`
+	Latitude    float64 `json:"latitude" db:"latitude"`
+	Longitude   float64 `json:"longitude" db:"longitude"`
 	CreatedAt    time.Time `json:"createdAt" db:"created_at"`
 	UpdatedAt    time.Time `json:"updatedAt" db:"updated_at"`
 }
@@ -37,4 +43,9 @@ type GRPCServerResponse struct {
 	Website      string       `json:"website"`
 	Status       []StatusItem `json:"status"`
 	OverallScore float64      `json:"overallScore"`
+	// Geographic fields (Phase 2)
+	Country     string  `json:"country"`
+	City        string  `json:"city"`
+	Latitude    float64 `json:"latitude"`
+	Longitude   float64 `json:"longitude"`
 }
