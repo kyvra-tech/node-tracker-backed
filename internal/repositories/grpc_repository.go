@@ -21,6 +21,7 @@ type GRPCRepository interface {
 	CreateServer(ctx context.Context, server *models.GRPCServer) error
 	UpdateServer(ctx context.Context, server *models.GRPCServer) error
 	UpdateServerScore(ctx context.Context, serverID int, score float64) error
+	UpdateServerGeo(ctx context.Context, serverID int, country, countryCode, city string, lat, lon float64) error
 	DeactivateServer(ctx context.Context, address string) error
 	ServerExists(ctx context.Context, address string) (bool, error)
 
@@ -188,6 +189,30 @@ func (r *grpcRepository) UpdateServerScore(ctx context.Context, serverID int, sc
 	result, err := r.db.ExecContext(ctx, query, score, serverID)
 	if err != nil {
 		return fmt.Errorf("update server score: %w", err)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("check rows affected: %w", err)
+	}
+
+	if rows == 0 {
+		return fmt.Errorf("server not found: %d", serverID)
+	}
+
+	return nil
+}
+
+func (r *grpcRepository) UpdateServerGeo(ctx context.Context, serverID int, country, countryCode, city string, lat, lon float64) error {
+	query := `
+		UPDATE grpc_servers 
+		SET country = $1, country_code = $2, city = $3, latitude = $4, longitude = $5, updated_at = NOW()
+		WHERE id = $6
+	`
+
+	result, err := r.db.ExecContext(ctx, query, country, countryCode, city, lat, lon, serverID)
+	if err != nil {
+		return fmt.Errorf("update server geo: %w", err)
 	}
 
 	rows, err := result.RowsAffected()

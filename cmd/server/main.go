@@ -44,6 +44,7 @@ func main() {
 	statusRepo := repositories.NewStatusRepository(db.DB)
 	grpcRepo := repositories.NewGRPCRepository(db.DB)
 	grpcStatusRepo := repositories.NewGRPCStatusRepository(db.DB)
+	registrationRepo := repositories.NewRegistrationRepository(db.DB)
 
 	// Initialize services
 	nodeChecker := services.NewNodeChecker(
@@ -52,10 +53,7 @@ func main() {
 		appLogger,
 	)
 
-	bootstrapService := services.NewBootstrapService(
-		appLogger,
-		"./internal/database/bootstrap.json",
-	)
+	bootstrapService := services.NewBootstrapService(appLogger, "./internal/database/bootstrap.json")
 
 	bootstrapMonitor := services.NewBootstrapMonitor(
 		bootstrapRepo,
@@ -66,10 +64,7 @@ func main() {
 	)
 
 	// Initialize gRPC services
-	grpcServerService := services.NewGRPCServerService(
-		appLogger,
-		"./internal/database/servers.json",
-	)
+	grpcServerService := services.NewGRPCServerService(appLogger, "./internal/database/servers.json")
 	grpcChecker := services.NewGRPCChecker(
 		cfg.Monitor.ConnectionTimeout,
 		cfg.Monitor.MaxRetryAttempts,
@@ -92,7 +87,7 @@ func main() {
 	healthHandler := handlers.NewHealthHandler(db.DB, appLogger, "1.0.0")
 
 	// Initialize JSON-RPC service and handler
-	jsonRPCService := services.NewJsonRPCService(grpcMonitor, bootstrapMonitor, appLogger)
+	jsonRPCService := services.NewJsonRPCService(grpcMonitor, bootstrapMonitor, registrationRepo, appLogger)
 	jsonRPCHandler := handlers.NewJsonRPCHandler(jsonRPCService, appLogger)
 	// Setup Gin router
 	if cfg.Logger.Level != "debug" {

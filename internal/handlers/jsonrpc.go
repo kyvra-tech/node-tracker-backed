@@ -103,6 +103,15 @@ func (h *JsonRPCHandler) processRequest(ctx context.Context, req JSONRPCRequest)
 		result, methodErr = h.service.SyncBootstrapNodes(ctx, struct{}{})
 	case "getHealth":
 		result, methodErr = h.service.GetHealth(ctx, struct{}{})
+	// Phase 2 methods
+	case "getNetworkStats":
+		result, methodErr = h.service.GetNetworkStats(ctx, struct{}{})
+	case "getMapNodes":
+		result, methodErr = h.service.GetMapNodes(ctx, struct{}{})
+	case "registerNode":
+		var params services.RegisterNodeParams
+		json.Unmarshal(req.Params, &params)
+		result, methodErr = h.service.RegisterNode(ctx, params)
 	default:
 		h.logger.WithField("method", req.Method).Error("Method not found")
 		response.Error = &JSONRPCError{
