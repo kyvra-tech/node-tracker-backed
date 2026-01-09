@@ -14,6 +14,7 @@ type JsonRPCService struct {
 	grpcMonitor       *GRPCMonitor
 	bootstrapMonitor  *BootstrapMonitor
 	registrationRepo  repositories.RegistrationRepository
+	networkStats      *NetworkStatsService
 	logger            *logrus.Logger
 }
 
@@ -21,12 +22,14 @@ func NewJsonRPCService(
 	grpcMonitor *GRPCMonitor,
 	bootstrapMonitor *BootstrapMonitor,
 	registrationRepo repositories.RegistrationRepository,
+	networkStats *NetworkStatsService,
 	logger *logrus.Logger,
 ) *JsonRPCService {
 	return &JsonRPCService{
 		grpcMonitor:      grpcMonitor,
 		bootstrapMonitor: bootstrapMonitor,
 		registrationRepo: registrationRepo,
+		networkStats:     networkStats,
 		logger:           logger,
 	}
 }
@@ -50,6 +53,10 @@ func (s *JsonRPCService) GetNodes(ctx context.Context, params struct{}) ([]*mode
 			Website:      server.Website,
 			Status:       server.Status,
 			OverallScore: server.OverallScore,
+			Country:      server.Country,
+			City:         server.City,
+			Latitude:     server.Latitude,
+			Longitude:    server.Longitude,
 		}
 		response = append(response, jsonRPCNode)
 	}
@@ -169,63 +176,34 @@ func (s *JsonRPCService) GetHealth(ctx context.Context, params struct{}) (*model
 
 // GetNetworkStats returns network statistics
 func (s *JsonRPCService) GetNetworkStats(ctx context.Context, params struct{}) (*models.NetworkStats, error) {
-	grpcCount, _ := s.grpcMonitor.GetGRPCServerCount(ctx)
-	bootstrapCount, _ := s.bootstrapMonitor.GetBootstrapNodeCount(ctx)
-
-	// Get country stats from gRPC and bootstrap nodes
-	topCountries := []models.CountryStats{}
-
-	return &models.NetworkStats{
-		TotalNodes:     grpcCount + bootstrapCount,
-		ReachableNodes: grpcCount + bootstrapCount,
-		CountriesCount: len(topCountries),
-		AvgUptime:      95.0, // Default value
-		TopCountries:   topCountries,
-		GRPCNodes:      grpcCount,
-		JSONRPCNodes:   0,
-		BootstrapNodes: bootstrapCount,
-	}, nil
+	if s.networkStats == nil {
+		return nil, fmt.Errorf("network stats service not available")
+	}
+	return s.networkStats.GetNetworkStats(ctx)
 }
 
 // GetMapNodes returns all nodes formatted for map display
 func (s *JsonRPCService) GetMapNodes(ctx context.Context, params struct{}) ([]models.MapNode, error) {
-	var mapNodes []models.MapNode
+	if s.networkStats == nil {
+		return nil, fmt.Errorf("network stats service not available")
+	}
+	return s.networkStats.GetMapNodes(ctx)
+}
 
-	// Get gRPC servers with geo data
-	grpcServers, err := s.grpcMonitor.GetGRPCServersWithStatus(ctx)
-	if err == nil {
-		for i, server := range grpcServers {
-			// We need latitude/longitude from the server, but the response doesn't include it
-			// For now, return nodes without coordinates as a placeholder
-			mapNodes = append(mapNodes, models.MapNode{
-				ID:          i + 1,
-				Name:        server.Name,
-				Type:        "grpc",
-				Coordinates: []float64{0, 0}, // Will be populated from DB
-				Status:      getNodeStatus(server.OverallScore),
-				Country:     server.Country,
-				City:        server.City,
-			})
-		}
+// UpdateGeoLocations updates geographic data for all servers
+func (s *JsonRPCService) UpdateGeoLocations(ctx context.Context, params struct{}) (*models.StatusResponse, error) {
+	if s.networkStats == nil {
+		return nil, fmt.Errorf("network stats service not available")
 	}
 
-	// Get bootstrap nodes
-	bootstrapNodes, err := s.bootstrapMonitor.GetBootstrapNodesWithStatus(ctx)
-	if err == nil {
-		for i, node := range bootstrapNodes {
-			mapNodes = append(mapNodes, models.MapNode{
-				ID:          i + 1000,
-				Name:        node.Name,
-				Type:        "bootstrap",
-				Coordinates: []float64{0, 0}, // Will be populated from DB
-				Status:      getNodeStatus(node.OverallScore),
-				Country:     node.Country,
-				City:        node.City,
-			})
-		}
+	if err := s.networkStats.UpdateAllGeoLocations(ctx); err != nil {
+		return nil, fmt.Errorf("failed to update geo locations: %w", err)
 	}
 
-	return mapNodes, nil
+	return &models.StatusResponse{
+		Status:    "geo locations updated",
+		Timestamp: time.Now().UTC(),
+	}, nil
 }
 
 func getNodeStatus(score float64) string {

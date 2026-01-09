@@ -150,6 +150,10 @@ func (bm *BootstrapMonitor) GetBootstrapNodesWithStatus(ctx context.Context) ([]
 			Address:      node.Address,
 			Status:       statuses,
 			OverallScore: node.OverallScore,
+			Country:      node.Country,
+			City:         node.City,
+			Latitude:     node.Latitude,
+			Longitude:    node.Longitude,
 		}
 
 		response = append(response, nodeResponse)

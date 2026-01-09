@@ -41,7 +41,7 @@ func NewBootstrapRepository(db *sql.DB) BootstrapRepository {
 
 func (r *bootstrapRepository) GetActiveNodes(ctx context.Context) ([]*models.BootstrapNode, error) {
 	query := `
-		SELECT id, name, email, website, address, overall_score, is_active, created_at, updated_at
+		SELECT id, name, email, website, address, overall_score, is_active, COALESCE(country, ''), COALESCE(country_code, ''), COALESCE(city, ''), COALESCE(latitude, 0), COALESCE(longitude, 0), created_at, updated_at
 		FROM bootstrap_nodes 
 		WHERE is_active = true
 		ORDER BY id
@@ -58,7 +58,7 @@ func (r *bootstrapRepository) GetActiveNodes(ctx context.Context) ([]*models.Boo
 
 func (r *bootstrapRepository) GetAllNodes(ctx context.Context) ([]*models.BootstrapNode, error) {
 	query := `
-		SELECT id, name, email, website, address, overall_score, is_active, created_at, updated_at
+		SELECT id, name, email, website, address, overall_score, is_active, COALESCE(country, ''), COALESCE(country_code, ''), COALESCE(city, ''), COALESCE(latitude, 0), COALESCE(longitude, 0), created_at, updated_at
 		FROM bootstrap_nodes 
 		ORDER BY id
 	`
@@ -74,7 +74,7 @@ func (r *bootstrapRepository) GetAllNodes(ctx context.Context) ([]*models.Bootst
 
 func (r *bootstrapRepository) GetNodeByID(ctx context.Context, id int) (*models.BootstrapNode, error) {
 	query := `
-		SELECT id, name, email, website, address, overall_score, is_active, created_at, updated_at
+		SELECT id, name, email, website, address, overall_score, is_active, COALESCE(country, ''), COALESCE(country_code, ''), COALESCE(city, ''), COALESCE(latitude, 0), COALESCE(longitude, 0), created_at, updated_at
 		FROM bootstrap_nodes 
 		WHERE id = $1
 	`
@@ -82,7 +82,9 @@ func (r *bootstrapRepository) GetNodeByID(ctx context.Context, id int) (*models.
 	node := &models.BootstrapNode{}
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
 		&node.ID, &node.Name, &node.Email, &node.Website, &node.Address,
-		&node.OverallScore, &node.IsActive, &node.CreatedAt, &node.UpdatedAt,
+		&node.OverallScore, &node.IsActive,
+		&node.Country, &node.CountryCode, &node.City, &node.Latitude, &node.Longitude,
+		&node.CreatedAt, &node.UpdatedAt,
 	)
 
 	if err == sql.ErrNoRows {
@@ -97,7 +99,7 @@ func (r *bootstrapRepository) GetNodeByID(ctx context.Context, id int) (*models.
 
 func (r *bootstrapRepository) GetNodeByAddress(ctx context.Context, address string) (*models.BootstrapNode, error) {
 	query := `
-		SELECT id, name, email, website, address, overall_score, is_active, created_at, updated_at
+		SELECT id, name, email, website, address, overall_score, is_active, COALESCE(country, ''), COALESCE(country_code, ''), COALESCE(city, ''), COALESCE(latitude, 0), COALESCE(longitude, 0), created_at, updated_at
 		FROM bootstrap_nodes 
 		WHERE address = $1
 	`
@@ -105,7 +107,9 @@ func (r *bootstrapRepository) GetNodeByAddress(ctx context.Context, address stri
 	node := &models.BootstrapNode{}
 	err := r.db.QueryRowContext(ctx, query, address).Scan(
 		&node.ID, &node.Name, &node.Email, &node.Website, &node.Address,
-		&node.OverallScore, &node.IsActive, &node.CreatedAt, &node.UpdatedAt,
+		&node.OverallScore, &node.IsActive,
+		&node.Country, &node.CountryCode, &node.City, &node.Latitude, &node.Longitude,
+		&node.CreatedAt, &node.UpdatedAt,
 	)
 
 	if err == sql.ErrNoRows {
@@ -281,7 +285,9 @@ func (r *bootstrapRepository) scanNodes(rows *sql.Rows) ([]*models.BootstrapNode
 		node := &models.BootstrapNode{}
 		err := rows.Scan(
 			&node.ID, &node.Name, &node.Email, &node.Website, &node.Address,
-			&node.OverallScore, &node.IsActive, &node.CreatedAt, &node.UpdatedAt,
+			&node.OverallScore, &node.IsActive,
+			&node.Country, &node.CountryCode, &node.City, &node.Latitude, &node.Longitude,
+			&node.CreatedAt, &node.UpdatedAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scan node: %w", err)
