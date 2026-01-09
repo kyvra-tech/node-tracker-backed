@@ -229,28 +229,53 @@ func (s *JSONRPCMonitorService) UpdateServerGeoLocations(ctx context.Context) er
 		return err
 	}
 
+	// Use concurrency to speed up updates
+	// Note: basic ip-api.com free tier has 45 req/min rate limit.
+	// We use a small concurrency limit to avoid overwhelming it immediately,
+	// but if many updates are needed, we might still hit limits.
+	const maxConcurrent = 5
+	semaphore := make(chan struct{}, maxConcurrent)
+	var wg sync.WaitGroup
+
 	for _, server := range servers {
 		// Skip if already has geo data
 		if server.Country != "" {
 			continue
 		}
 
-		ip := s.geoService.ExtractIPFromAddress(server.Address)
-		if ip == "" {
-			s.logger.WithField("address", server.Address).Debug("Could not extract IP from address")
-			continue
-		}
+		wg.Add(1)
+		go func(srv *models.JSONRPCServer) {
+			defer wg.Done()
+			
+			// Acquire semaphore
+			semaphore <- struct{}{}
+			defer func() { <-semaphore }()
 
-		geo, err := s.geoService.GetLocation(ctx, ip)
-		if err != nil {
-			s.logger.WithError(err).WithField("server_id", server.ID).Warn("Failed to get geo location")
-			continue
-		}
+			ip := s.geoService.ExtractIPFromAddress(srv.Address)
+			if ip == "" {
+				s.logger.WithField("address", srv.Address).Debug("Could not extract IP from address")
+				return
+			}
 
-		if err := s.serverRepo.UpdateServerGeo(ctx, server.ID, geo); err != nil {
-			s.logger.WithError(err).WithField("server_id", server.ID).Error("Failed to update geo data")
-		}
+			// Check context before making request
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+
+			geo, err := s.geoService.GetLocation(ctx, ip)
+			if err != nil {
+				s.logger.WithError(err).WithField("server_id", srv.ID).Warn("Failed to get geo location")
+				return
+			}
+
+			if err := s.serverRepo.UpdateServerGeo(ctx, srv.ID, geo); err != nil {
+				s.logger.WithError(err).WithField("server_id", srv.ID).Error("Failed to update geo data")
+			}
+		}(server)
 	}
 
+	wg.Wait()
 	return nil
 }
