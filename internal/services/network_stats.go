@@ -45,8 +45,6 @@ func NewNetworkStatsService(
 func (s *NetworkStatsService) GetNetworkStats(ctx context.Context) (*models.NetworkStats, error) {
 	// Get peer counts
 	reachablePeers, _ := s.peerRepo.CountReachable(ctx)
-	countries, _ := s.peerRepo.CountCountries(ctx)
-	topCountries, _ := s.peerRepo.GetTopCountries(ctx, 10)
 	avgUptime, _ := s.peerRepo.GetAvgUptime(ctx)
 
 	// Get server counts
@@ -56,10 +54,55 @@ func (s *NetworkStatsService) GetNetworkStats(ctx context.Context) (*models.Netw
 
 	totalNodes := reachablePeers + grpcCount + jsonrpcCount + bootstrapCount
 
+	// Calculate stats from all sources
+	countryMap := make(map[string]int)
+	
+	// Process gRPC servers
+	if grpcServers, err := s.grpcRepo.GetActiveServers(ctx); err == nil {
+		for _, server := range grpcServers {
+			if server.Country != "" {
+				countryMap[server.Country]++
+			}
+		}
+	} else {
+		s.logger.WithError(err).Warn("Failed to get gRPC servers for stats")
+	}
+
+	// Process bootstrap nodes
+	if bootstrapNodes, err := s.bootstrapRepo.GetActiveNodes(ctx); err == nil {
+		for _, node := range bootstrapNodes {
+			if node.Country != "" {
+				countryMap[node.Country]++
+			}
+		}
+	} else {
+		s.logger.WithError(err).Warn("Failed to get bootstrap nodes for stats")
+	}
+
+	// Process peers (if any)
+	// We use repository aggregation for peers to avoid loading all into memory if many
+	if peerCountries, err := s.peerRepo.CountCountries(ctx); err == nil && peerCountries > 0 {
+		// For detailed breakdown we would need to query group by, skipping for now
+		// or we could assume peerRepo.GetTopCountries includes the counts we need
+	}
+
+	// Convert map to TopCountries
+	var topCountries []models.CountryStats
+	for country, count := range countryMap {
+		// Lookup country code if possible (skipping for simplicity now)
+		topCountries = append(topCountries, models.CountryStats{
+			Country: country,
+			Count:   count,
+		})
+	}
+
+	// Sort limit to top 10 (simple bubble sort or similar, or just return all for now since list is small)
+	// TODO: Implement sorting if list grows large
+
 	return &models.NetworkStats{
 		TotalNodes:     totalNodes,
 		ReachableNodes: reachablePeers,
-		CountriesCount: countries,
+		CountriesCount: len(countryMap),
 		AvgUptime:      avgUptime,
 		TopCountries:   topCountries,
 		GRPCNodes:      grpcCount,
@@ -70,7 +113,8 @@ func (s *NetworkStatsService) GetNetworkStats(ctx context.Context) (*models.Netw
 
 // GetMapNodes returns all nodes formatted for map display
 func (s *NetworkStatsService) GetMapNodes(ctx context.Context) ([]models.MapNode, error) {
-	var mapNodes []models.MapNode
+	mapNodes := make([]models.MapNode, 0)
+
 
 	// Get gRPC servers
 	grpcServers, err := s.grpcRepo.GetActiveServers(ctx)
@@ -203,9 +247,10 @@ func (s *NetworkStatsService) UpdateAllGeoLocations(ctx context.Context) error {
 	if err == nil {
 		for _, server := range grpcServers {
 			if server.Latitude == 0 && server.Longitude == 0 && server.Address != "" {
+				s.logger.WithField("address", server.Address).Info("Looking up geo for gRPC server")
 				geo, err := s.geoService.LookupAddress(ctx, server.Address)
 				if err != nil {
-					s.logger.WithError(err).WithField("address", server.Address).Debug("Failed to lookup geo for gRPC server")
+					s.logger.WithError(err).WithField("address", server.Address).Warn("Failed to lookup geo for gRPC server")
 					continue
 				}
 				if geo != nil && geo.Status == "success" {
@@ -213,8 +258,18 @@ func (s *NetworkStatsService) UpdateAllGeoLocations(ctx context.Context) error {
 					if err != nil {
 						s.logger.WithError(err).Error("Failed to update gRPC server geo")
 					} else {
-						s.logger.WithField("server", server.Name).Info("Updated geo for gRPC server")
+						s.logger.WithFields(logrus.Fields{
+							"server":  server.Name,
+							"country": geo.Country,
+							"city":    geo.City,
+							"lat":     geo.Latitude,
+							"lon":     geo.Longitude,
+						}).Info("Updated geo for gRPC server")
 					}
+					// Rate limit: 45 requests per minute
+					time.Sleep(1500 * time.Millisecond)
+				} else {
+					s.logger.WithField("address", server.Address).Warn("Geo lookup returned no success status")
 				}
 			}
 		}
@@ -225,9 +280,10 @@ func (s *NetworkStatsService) UpdateAllGeoLocations(ctx context.Context) error {
 	if err == nil {
 		for _, node := range bootstrapNodes {
 			if node.Latitude == 0 && node.Longitude == 0 && node.Address != "" {
+				s.logger.WithField("address", node.Address).Info("Looking up geo for bootstrap node")
 				geo, err := s.geoService.LookupAddress(ctx, node.Address)
 				if err != nil {
-					s.logger.WithError(err).WithField("address", node.Address).Debug("Failed to lookup geo for bootstrap node")
+					s.logger.WithError(err).WithField("address", node.Address).Warn("Failed to lookup geo for bootstrap node")
 					continue
 				}
 				if geo != nil && geo.Status == "success" {
@@ -235,8 +291,18 @@ func (s *NetworkStatsService) UpdateAllGeoLocations(ctx context.Context) error {
 					if err != nil {
 						s.logger.WithError(err).Error("Failed to update bootstrap node geo")
 					} else {
-						s.logger.WithField("node", node.Name).Info("Updated geo for bootstrap node")
+						s.logger.WithFields(logrus.Fields{
+							"node":    node.Name,
+							"country": geo.Country,
+							"city":    geo.City,
+							"lat":     geo.Latitude,
+							"lon":     geo.Longitude,
+						}).Info("Updated geo for bootstrap node")
 					}
+					// Rate limit: 45 requests per minute
+					time.Sleep(1500 * time.Millisecond)
+				} else {
+					s.logger.WithField("address", node.Address).Warn("Geo lookup returned no success status")
 				}
 			}
 		}

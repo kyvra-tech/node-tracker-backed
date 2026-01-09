@@ -11,6 +11,10 @@ type JsonRPCNodeResponse struct {
 	Website      string       `json:"website"`
 	Status       []StatusItem `json:"status"`
 	OverallScore float64      `json:"overallScore"`
+	Country      string       `json:"country"`
+	City         string       `json:"city"`
+	Latitude     float64      `json:"latitude"`
+	Longitude    float64      `json:"longitude"`
 }
 
 // StatusResponse represents a status check response

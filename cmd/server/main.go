@@ -45,6 +45,9 @@ func main() {
 	grpcRepo := repositories.NewGRPCRepository(db.DB)
 	grpcStatusRepo := repositories.NewGRPCStatusRepository(db.DB)
 	registrationRepo := repositories.NewRegistrationRepository(db.DB)
+	peerRepo := repositories.NewPeerRepository(db.DB)
+	jsonrpcRepo := repositories.NewJSONRPCServerRepository(db.DB)
+	snapshotRepo := repositories.NewSnapshotRepository(db.DB)
 
 	// Initialize services
 	nodeChecker := services.NewNodeChecker(
@@ -78,6 +81,19 @@ func main() {
 		grpcServerService,
 	)
 
+	// Initialize Phase 2 Services
+	geoService := services.NewGeoLocationService(appLogger)
+
+	networkStatsService := services.NewNetworkStatsService(
+		peerRepo,
+		grpcRepo,
+		jsonrpcRepo,
+		bootstrapRepo,
+		snapshotRepo,
+		geoService,
+		appLogger,
+	)
+
 	// Initialize scheduler
 	cronScheduler := scheduler.NewCronScheduler(bootstrapMonitor, grpcMonitor, appLogger)
 	cronScheduler.Start()
@@ -87,7 +103,7 @@ func main() {
 	healthHandler := handlers.NewHealthHandler(db.DB, appLogger, "1.0.0")
 
 	// Initialize JSON-RPC service and handler
-	jsonRPCService := services.NewJsonRPCService(grpcMonitor, bootstrapMonitor, registrationRepo, appLogger)
+	jsonRPCService := services.NewJsonRPCService(grpcMonitor, bootstrapMonitor, registrationRepo, networkStatsService, appLogger)
 	jsonRPCHandler := handlers.NewJsonRPCHandler(jsonRPCService, appLogger)
 	// Setup Gin router
 	if cfg.Logger.Level != "debug" {

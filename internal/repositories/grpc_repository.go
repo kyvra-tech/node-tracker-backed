@@ -41,7 +41,7 @@ func NewGRPCRepository(db *sql.DB) GRPCRepository {
 
 func (r *grpcRepository) GetActiveServers(ctx context.Context) ([]*models.GRPCServer, error) {
 	query := `
-SELECT id, name, address, network, overall_score, is_active, email, website, created_at, updated_at
+SELECT id, name, address, network, overall_score, is_active, email, website, COALESCE(country, ''), COALESCE(country_code, ''), COALESCE(city, ''), COALESCE(latitude, 0), COALESCE(longitude, 0), created_at, updated_at
 FROM grpc_servers 
 WHERE is_active = true
 ORDER BY network, id
@@ -58,7 +58,7 @@ ORDER BY network, id
 
 func (r *grpcRepository) GetAllServers(ctx context.Context) ([]*models.GRPCServer, error) {
 	query := `
-SELECT id, name, address, network, overall_score, is_active, email, website, created_at, updated_at
+SELECT id, name, address, network, overall_score, is_active, email, website, COALESCE(country, ''), COALESCE(country_code, ''), COALESCE(city, ''), COALESCE(latitude, 0), COALESCE(longitude, 0), created_at, updated_at
 FROM grpc_servers 
 ORDER BY network, id
 	`
@@ -74,7 +74,7 @@ ORDER BY network, id
 
 func (r *grpcRepository) GetServerByID(ctx context.Context, id int) (*models.GRPCServer, error) {
 	query := `
-SELECT id, name, address, network, overall_score, is_active, email, website, created_at, updated_at
+SELECT id, name, address, network, overall_score, is_active, email, website, COALESCE(country, ''), COALESCE(country_code, ''), COALESCE(city, ''), COALESCE(latitude, 0), COALESCE(longitude, 0), created_at, updated_at
 FROM grpc_servers 
 WHERE id = $1
 	`
@@ -82,7 +82,9 @@ WHERE id = $1
 	server := &models.GRPCServer{}
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
 		&server.ID, &server.Name, &server.Address, &server.Network,
-		&server.OverallScore, &server.IsActive, &server.CreatedAt, &server.UpdatedAt,
+		&server.OverallScore, &server.IsActive, &server.Email, &server.Website,
+		&server.Country, &server.CountryCode, &server.City, &server.Latitude, &server.Longitude,
+		&server.CreatedAt, &server.UpdatedAt,
 	)
 
 	if err == sql.ErrNoRows {
@@ -97,7 +99,7 @@ WHERE id = $1
 
 func (r *grpcRepository) GetServerByAddress(ctx context.Context, address string) (*models.GRPCServer, error) {
 	query := `
-SELECT id, name, address, network, overall_score, is_active, email, website, created_at, updated_at
+SELECT id, name, address, network, overall_score, is_active, email, website, COALESCE(country, ''), COALESCE(country_code, ''), COALESCE(city, ''), COALESCE(latitude, 0), COALESCE(longitude, 0), created_at, updated_at
 FROM grpc_servers 
 WHERE address = $1
 	`
@@ -105,7 +107,9 @@ WHERE address = $1
 	server := &models.GRPCServer{}
 	err := r.db.QueryRowContext(ctx, query, address).Scan(
 		&server.ID, &server.Name, &server.Address, &server.Network,
-		&server.OverallScore, &server.IsActive, &server.CreatedAt, &server.UpdatedAt,
+		&server.OverallScore, &server.IsActive, &server.Email, &server.Website,
+		&server.Country, &server.CountryCode, &server.City, &server.Latitude, &server.Longitude,
+		&server.CreatedAt, &server.UpdatedAt,
 	)
 
 	if err == sql.ErrNoRows {
@@ -120,7 +124,7 @@ WHERE address = $1
 
 func (r *grpcRepository) GetServersByNetwork(ctx context.Context, network string) ([]*models.GRPCServer, error) {
 	query := `
-SELECT id, name, address, network, overall_score, is_active, email, website, created_at, updated_at
+SELECT id, name, address, network, overall_score, is_active, email, website, COALESCE(country, ''), COALESCE(country_code, ''), COALESCE(city, ''), COALESCE(latitude, 0), COALESCE(longitude, 0), created_at, updated_at
 FROM grpc_servers 
 WHERE network = $1 AND is_active = true
 ORDER BY id
@@ -303,6 +307,7 @@ func (r *grpcRepository) scanServers(rows *sql.Rows) ([]*models.GRPCServer, erro
 		err := rows.Scan(
 			&server.ID, &server.Name, &server.Address, &server.Network,
 			&server.OverallScore, &server.IsActive, &server.Email, &server.Website,
+			&server.Country, &server.CountryCode, &server.City, &server.Latitude, &server.Longitude,
 			&server.CreatedAt, &server.UpdatedAt,
 		)
 		if err != nil {
